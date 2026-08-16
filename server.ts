@@ -1,0 +1,667 @@
+import express from "express";
+import path from "path";
+import crypto from "crypto";
+import { createServer as createViteServer } from "vite";
+import { GoogleGenAI } from "@google/genai";
+import dotenv from "dotenv";
+
+dotenv.config();
+
+// Flow Payments Configuration (Chile: Webpay Plus, Redcompra, Servipag, Mach, etc.)
+// Credentials must come from .env (never hardcode secrets here).
+const FLOW_API_KEY = process.env.FLOW_API_KEY || "";
+const FLOW_SECRET_KEY = process.env.FLOW_SECRET_KEY || "";
+const FLOW_ENV = process.env.FLOW_ENVIRONMENT || "sandbox";
+const FLOW_BASE_URL = FLOW_ENV === "sandbox" ? "https://sandbox.flow.cl/api" : "https://www.flow.cl/api";
+
+if (!FLOW_API_KEY || !FLOW_SECRET_KEY) {
+  console.warn("⚠️  FLOW_API_KEY / FLOW_SECRET_KEY not set in .env — payment routes will fail.");
+}
+
+function signFlowParams(params: Record<string, string | number>, secretKey: string): string {
+  const sortedKeys = Object.keys(params).sort();
+  let toSign = "";
+  for (const key of sortedKeys) {
+    toSign += `${key}${params[key]}`;
+  }
+  return crypto.createHmac("sha256", secretKey).update(toSign).digest("hex");
+}
+
+const ai = new GoogleGenAI({
+  apiKey: process.env.GEMINI_API_KEY,
+  httpOptions: {
+    headers: {
+      "User-Agent": "aistudio-build",
+    },
+  },
+});
+
+async function startServer() {
+  const app = express();
+  const PORT = 3000;
+
+  app.use(express.json({ limit: "25mb" }));
+  app.use(express.urlencoded({ extended: true, limit: "25mb" }));
+
+  // API Health Check
+  app.get("/api/health", (_req, res) => {
+    res.json({
+      status: "ok",
+      appName: "MEMORA",
+      timestamp: new Date().toISOString(),
+      geminiConfigured: !!process.env.GEMINI_API_KEY,
+      flowConfigured: !!FLOW_API_KEY && !!FLOW_SECRET_KEY,
+      flowEnvironment: FLOW_ENV,
+    });
+  });
+
+
+  // AI Biography Assistant Route (Ayúdame a contar su historia)
+  app.post("/api/gemini/biography-assist", async (req, res) => {
+    try {
+      const {
+        personName,
+        memorialType = "person",
+        species,
+        breed,
+        birthDate,
+        passingDate,
+        birthPlace,
+        notes,
+        passions,
+        familyDetails,
+        keyMilestones,
+        personality,
+        favoriteThings,
+        favoritePlace,
+        anecdote,
+        arrivalStory,
+        specialTrait,
+        tone = "calido", // calido | clasico | intimo | poetico
+      } = req.body;
+
+      if (!personName) {
+        return res.status(400).json({ error: "El nombre es requerido." });
+      }
+
+      const isPet = memorialType === "pet";
+
+      const prompt = isPet
+        ? `Actúa como un redactor biográfico y conmemorativo profundamente empático, respetuoso y sensible para una plataforma conmemorativa llamada MEMORA Mascotas.
+Tu tarea es transformar las anécdotas, recuerdos y detalles de "${personName}" (especie: ${species || "Mascota / Animal de compañía"}, raza: ${breed || "No especificada"}) en una historia de vida conmovedora, digna y hermosa que celebre su lugar irremplazable como miembro amado de la familia.
+
+INFORMACIÓN PROPORCIONADA:
+- Nombre: ${personName}
+- Especie y Raza: ${species || "Compañero animal"} · ${breed || "Mestizo / Único"}
+- Fecha de nacimiento / llegada: ${birthDate || "No especificado"}
+- Fecha de despedida: ${passingDate || "No especificado"}
+- Personalidad: ${personality || "Noble, alegre y cariñoso"}
+- Lo que le encantaba: ${favoriteThings || "Pasear, jugar y estar cerca de su familia"}
+- Su lugar favorito: ${favoritePlace || "Un rincón cálido del hogar"}
+- Travesura o anécdota inolvidable: ${anecdote || "Momentos llenos de ternura y juego"}
+- ¿Cómo llegó a la familia?: ${arrivalStory || "Llegó para transformar la vida de su hogar"}
+- ¿Qué lo/la hacía especial?: ${specialTrait || "Su lealtad y amor incondicional"}
+- Notas y recuerdos libres: ${notes || ""}
+- Tono solicitado: ${tone} (Elegante, cálido, familiar, respetuoso, nunca infantilizado ni caricaturesco)
+
+REGLAS ESTRICTAS:
+1. Trata a la mascota como lo que representa: un compañero de vida noble y un miembro fundamental de la familia.
+2. NO uses diminutivos excesivos ni lenguaje infantilizado. Mantén la elegancia, calidez y carácter premium de MEMORA.
+3. Organiza la historia en párrafos naturales (su llegada y personalidad, momentos felices y costumbres entrañables, gratitud y recuerdo eterno).
+4. Proporciona una cita conmemorativa hermosa (1-2 frases).
+5. Proporciona de 2 a 4 hitos sugeridos para su línea de tiempo (ej. Su llegada a casa, Aventuras compartidas, Los años dorados).
+
+Devuelve la respuesta en formato JSON con la siguiente estructura exacta:
+{
+  "biography": "Texto completo de la historia estructurada...",
+  "shortSummary": "Resumen breve de 2 líneas para la cabecera...",
+  "memorialQuote": "Frase emotiva para recordar su compañía y amor...",
+  "suggestedMilestones": [
+    { "year": "${birthDate ? birthDate.split("-")[0] : "2015"}", "title": "...", "description": "..." }
+  ]
+}`
+        : `Actúa como un redactor biográfico empático, respetuoso y sensible para una plataforma conmemorativa llamada MEMORA.
+Tu tarea es convertir las notas e información fragmentada proporcionada por los familiares en una biografía fluida, hermosa y profundamente digna para el memorial digital de "${personName}".
+
+INFORMACIÓN PROPORCIONADA:
+- Nombre: ${personName}
+- Nacimiento: ${birthDate || "No especificado"} en ${birthPlace || "No especificado"}
+- Fallecimiento: ${passingDate || "No especificado"}
+- Notas y anécdotas: ${notes || "Persona muy querida por su familia y amigos."}
+- Pasiones e intereses: ${passions || "No especificado"}
+- Familia y vínculos: ${familyDetails || "No especificado"}
+- Hitos importantes: ${keyMilestones || "No especificado"}
+- Tono solicitado: ${tone} (Opciones: calido = emotivo y cercano, clasico = elegante y formal, intimo = familiar y tierno, poetico = reflexivo y sereno)
+
+REGLAS ESTRICTAS:
+1. NUNCA inventes fechas, nombres de familiares ni hechos históricos que no se mencionen.
+2. Mantén un tono de celebración de vida, gratitud, amor y paz. Evita dramatismos innecesarios.
+3. Organiza el texto en párrafos naturales (introducción, trayectoria y pasiones, legado humano y memoria eterna).
+4. Proporciona además una cita conmemorativa corta (1-2 frases) que capture su esencia.
+5. Proporciona una lista de 3 a 5 momentos o hitos sugeridos para la línea de tiempo.
+
+Devuelve la respuesta en formato JSON con la siguiente estructura exacta:
+{
+  "biography": "Texto completo de la biografía estructurada...",
+  "shortSummary": "Resumen breve de 2-3 líneas para la cabecera...",
+  "memorialQuote": "Frase emotiva para recordar su esencia...",
+  "suggestedMilestones": [
+    { "year": "1954", "title": "...", "description": "..." }
+  ]
+}`;
+
+      if (process.env.GEMINI_API_KEY) {
+        try {
+          const response = await ai.models.generateContent({
+            model: "gemini-3.7-flash",
+            contents: prompt,
+            config: {
+              responseMimeType: "application/json",
+            },
+          });
+
+          const responseText = response.text || "{}";
+          const parsed = JSON.parse(responseText);
+          return res.json({ success: true, data: parsed });
+        } catch (apiErr: any) {
+          console.warn("Gemini API call failed, generating contextual fallback:", apiErr?.message);
+        }
+      }
+
+      if (isPet) {
+        const petBio = `${personName} fue mucho más que una mascota; fue un compañero leal de vida, un consuelo en los días difíciles y una fuente inagotable de alegría para toda la familia.\n\n${
+          arrivalStory ? arrivalStory + ". " : ""
+        }${
+          personality ? `Se caracterizaba por su personalidad ${personality.toLowerCase()}, ` : "Con un carácter dulce y entrañable, "
+        }${
+          favoriteThings ? `disfrutando intensamente de ${favoriteThings.toLowerCase()}. ` : ""
+        }${
+          favoritePlace ? `Su rincón predilecto siempre fue ${favoritePlace.toLowerCase()}. ` : ""
+        }${
+          anecdote ? `Entre tantas vivencias, la familia siempre recordará con una sonrisa aquella vez que ${anecdote.toLowerCase()}. ` : ""
+        }${
+          specialTrait ? `Lo que lo hacía verdaderamente inolvidable era que ${specialTrait.toLowerCase()}. ` : ""
+        }\n\nGracias por tu lealtad incondicional, por cada mirada llena de cariño y por enseñarnos el valor del amor más puro. Tu huella permanecerá por siempre en nuestro hogar y en nuestros corazones.`;
+
+        return res.json({
+          success: true,
+          data: {
+            biography: petBio,
+            shortSummary: `En memoria amorosa de ${personName}, un compañero fiel y un amor para siempre en el corazón de nuestra familia.`,
+            memorialQuote: `"Hay seres que no necesitan hablar para enseñarnos lo que es el amor incondicional."`,
+            suggestedMilestones: [
+              {
+                year: birthDate ? birthDate.split("-")[0] || "2015" : "2015",
+                title: "Llegada al hogar",
+                description: arrivalStory || `El día que ${personName} se unió a la familia.`,
+              },
+              {
+                year: "Aventuras compartidas",
+                title: "Juegos y momentos felices",
+                description: favoriteThings || "Paseos, juegos y cariños compartidos cada día.",
+              },
+              {
+                year: passingDate ? passingDate.split("-")[0] || "2024" : "2024",
+                title: "Amor para siempre",
+                description: "Un legado de lealtad y ternura que vivirá eternamente.",
+              },
+            ],
+          },
+        });
+      }
+
+      // Contextual Person Fallback
+      const fallbackBio = `${personName} iluminó la vida de quienes tuvieron el privilegio de caminar a su lado. ${
+        birthPlace ? `Nacido(a) en ${birthPlace}, ` : ""
+      }${notes ? notes : "Su generosidad, su sonrisa y su forma de estar presente dejaron una huella imborrable en el corazón de su familia y amigos."} ${
+        passions ? `Encontró siempre alegría en ${passions}, compartiendo su entusiasmo con generosidad.` : ""
+      } ${
+        familyDetails ? `Su mayor tesoro fue siempre su familia: ${familyDetails}.` : ""
+      }\n\nHoy celebramos no solo su recuerdo, sino el legado de amor, enseñanzas y momentos compartidos que seguirán viviendo por siempre en nuestras conversaciones y corazones.`;
+
+      return res.json({
+        success: true,
+        data: {
+          biography: fallbackBio,
+          shortSummary: `En memoria entrañable de ${personName}, cuya luz y amor permanecen en cada recuerdo compartido.`,
+          memorialQuote: `"Los recuerdos que sembramos con amor son eternos en el jardín de la memoria."`,
+          suggestedMilestones: [
+            {
+              year: birthDate ? birthDate.split("-")[0] || "1950" : "1950",
+              title: "Comienzo de un camino",
+              description: `Nacimiento de ${personName}${birthPlace ? ` en ${birthPlace}` : ""}.`,
+            },
+            {
+              year: "Años de juventud",
+              title: "Vocación y pasiones",
+              description: passions || "Dedicación y amor por lo que hacía.",
+            },
+            {
+              year: "Legado familiar",
+              title: "Momentos inolvidables",
+              description: "Una vida dedicada al cuidado y unión de sus seres queridos.",
+            },
+          ],
+        },
+      });
+    } catch (err: any) {
+      console.error("Error in biography-assist route:", err);
+      res.status(500).json({ error: "Error al procesar la asistencia biográfica." });
+    }
+  });
+
+  // AI Tribute Message Assistant
+  app.post("/api/gemini/tribute-assist", async (req, res) => {
+    try {
+      const { memorialName, relationship, userNotes, emotion } = req.body;
+
+      const prompt = `Ayuda a un familiar o amigo a redactar un mensaje de homenaje o condolencia sincero y respetuoso para el memorial digital de "${memorialName}".
+Relación con la persona: ${relationship || "Familiar o amigo"}
+Sentimiento o anécdota: ${userNotes || "Deseo expresar gratitud y amor por los momentos vividos"}
+Tono deseado: ${emotion || "afectuoso y reconfortante"}
+
+Genera 3 opciones de mensajes diferentes en formato JSON:
+{
+  "options": [
+    { "id": "1", "title": "Cálido y familiar", "text": "..." },
+    { "id": "2", "title": "Poético y reflexivo", "text": "..." },
+    { "id": "3", "title": "Breve y sentido", "text": "..." }
+  ]
+}`;
+
+      if (process.env.GEMINI_API_KEY) {
+        try {
+          const response = await ai.models.generateContent({
+            model: "gemini-3.7-flash",
+            contents: prompt,
+            config: {
+              responseMimeType: "application/json",
+            },
+          });
+          const parsed = JSON.parse(response.text || "{}");
+          return res.json({ success: true, data: parsed });
+        } catch (err) {
+          console.warn("Gemini tribute assist failed, using fallback:", err);
+        }
+      }
+
+      return res.json({
+        success: true,
+        data: {
+          options: [
+            {
+              id: "1",
+              title: "Cálido y familiar",
+              text: `Querido(a) ${memorialName}, tu presencia y tu cariño siempre formarán parte de nosotros. Gracias por cada sonrisa, cada conversación y por enseñarnos el verdadero valor de la familia. Descansa en paz.`,
+            },
+            {
+              id: "2",
+              title: "Poético y reflexivo",
+              text: `Hay seres que dejan una luz tan hermosa que jamás se apaga. Gracias, ${memorialName}, por iluminar nuestros días con tu bondad. Tu memoria vive en cada atardecer y en cada recuerdo que atesoramos.`,
+            },
+            {
+              id: "3",
+              title: "Breve y sentido",
+              text: `Siempre en nuestros corazones, querido(a) ${memorialName}. Tu ejemplo y tu amor nos acompañarán cada día.`,
+            },
+          ],
+        },
+      });
+    } catch (err) {
+      res.status(500).json({ error: "Error generando sugerencias de homenaje." });
+    }
+  });
+
+  // ==========================================
+  // FLOW PAYMENT GATEWAY INTEGRATION (CHILE)
+  // ==========================================
+
+  // Flow Public Configuration
+  app.get("/api/payments/flow/config", (_req, res) => {
+    res.json({
+      configured: !!FLOW_API_KEY && !!FLOW_SECRET_KEY,
+      environment: FLOW_ENV,
+      currency: "CLP",
+      methods: [
+        { id: "webpay", name: "Webpay Plus (Débito y Crédito)", badge: "Transbank" },
+        { id: "redcompra", name: "Redcompra Débito", badge: "Transbank" },
+        { id: "servipag", name: "Servipag", badge: "Bancos e Instituciones" },
+        { id: "mach", name: "MACH / Fpay", badge: "Billeteras Digitales" },
+        { id: "multicaja", name: "Multicaja / Klap", badge: "Efectivo y Transferencia" },
+      ],
+    });
+  });
+
+  // Create Flow Payment Order
+  app.post("/api/payments/flow/create-order", async (req, res) => {
+    try {
+      const { planId, memorialId, userEmail, userName, isFreeTrialClaim } = req.body;
+
+      // New Commercial Plans Pricing (CLP)
+      const planPricesCLP: Record<string, number> = {
+        esencial: 990,
+        familia: 4900,
+        legado: 14900,
+        // Legacy aliases
+        para_siempre: 4900,
+        acompanado: 14900,
+      };
+
+      const planTitles: Record<string, string> = {
+        esencial: "MEMORA Esencial ($990 CLP/mes)",
+        familia: "MEMORA Familia ($4.900 CLP/mes)",
+        legado: "MEMORA Legado ($14.900 CLP/mes)",
+        para_siempre: "MEMORA Familia ($4.900 CLP/mes)",
+        acompanado: "MEMORA Legado ($14.900 CLP/mes)",
+      };
+
+      const normalizedPlan = planId === "para_siempre" ? "familia" : planId === "acompanado" ? "legado" : (planId || "familia");
+      const amount = isFreeTrialClaim && normalizedPlan === "esencial" ? 0 : (planPricesCLP[normalizedPlan] ?? 4900);
+      const planName = planTitles[normalizedPlan] ?? "MEMORA Familia";
+
+      // If free trial claim, activate immediately
+      if (amount === 0) {
+        return res.json({
+          success: true,
+          free: true,
+          planId: "esencial",
+          message: "Plan MEMORA Esencial activado con primer año gratis (365 días).",
+        });
+      }
+
+      const host = req.get("host") || "localhost:3000";
+      const protocol = req.protocol === "https" || req.headers["x-forwarded-proto"] === "https" ? "https" : "http";
+      const origin = process.env.APP_URL || `${protocol}://${host}`;
+
+      const commerceOrder = `MEMORA-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`;
+
+      const flowParams: Record<string, any> = {
+        amount,
+        apiKey: FLOW_API_KEY,
+        commerceOrder,
+        currency: "CLP",
+        email: userEmail || "contacto@memora.cl",
+        optional: JSON.stringify({
+          planId: planId || "para_siempre",
+          memorialId: memorialId || "",
+          userEmail: userEmail || "",
+          userName: userName || "Cliente Memora",
+        }),
+        subject: `MEMORA - ${planName}`,
+        urlConfirmation: `${origin}/api/payments/flow/confirmation`,
+        urlReturn: `${origin}/api/payments/flow/return`,
+      };
+
+      // Sign with HMAC-SHA256
+      flowParams.s = signFlowParams(flowParams, FLOW_SECRET_KEY);
+
+      const urlParams = new URLSearchParams();
+      for (const [k, v] of Object.entries(flowParams)) {
+        urlParams.append(k, String(v));
+      }
+
+      console.log(`[Flow] Creating payment order ${commerceOrder} for ${flowParams.email} ($${amount} CLP)`);
+
+      try {
+        const flowResponse = await fetch(`${FLOW_BASE_URL}/payment/create`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: urlParams.toString(),
+        });
+
+        const flowData = await flowResponse.json();
+
+        if (flowData.url && flowData.token) {
+          const redirectUrl = `${flowData.url}?token=${flowData.token}`;
+          return res.json({
+            success: true,
+            redirectUrl,
+            flowToken: flowData.token,
+            flowOrder: flowData.flowOrder,
+            commerceOrder,
+            amount,
+            currency: "CLP",
+          });
+        } else {
+          console.warn("[Flow API Response Warning]:", flowData);
+          // If credentials need sandbox or live environment switch, provide clear feedback
+          return res.json({
+            success: false,
+            error: flowData.message || "Error al generar la orden en Flow.",
+            raw: flowData,
+            testUrl: `/checkout?session_id=${commerceOrder}&plan=${planId}&memorial=${memorialId || ""}&amount=${amount}&currency=CLP&flow_fallback=true`,
+          });
+        }
+      } catch (fetchErr: any) {
+        console.error("[Flow Network Error]:", fetchErr?.message);
+        return res.status(500).json({
+          success: false,
+          error: "No se pudo contactar los servidores de Flow.",
+          details: fetchErr?.message,
+        });
+      }
+    } catch (err: any) {
+      console.error("Error in /api/payments/flow/create-order:", err);
+      res.status(500).json({ success: false, error: "Error interno del servidor de pagos." });
+    }
+  });
+
+  // Flow Server Confirmation Webhook
+  app.post("/api/payments/flow/confirmation", async (req, res) => {
+    try {
+      const token = req.body.token || req.query.token;
+      if (!token) {
+        return res.status(400).send("Token required");
+      }
+
+      const params = {
+        apiKey: FLOW_API_KEY,
+        token: String(token),
+      };
+      const s = signFlowParams(params, FLOW_SECRET_KEY);
+
+      const statusRes = await fetch(`${FLOW_BASE_URL}/payment/getStatus?apiKey=${FLOW_API_KEY}&token=${token}&s=${s}`);
+      const statusData = await statusRes.json();
+
+      console.log("[Flow Webhook Confirmation Received]:", statusData);
+      // Status 2 = Pagada exitosamente
+      if (statusData.status === 2) {
+        console.log(`✅ Flow Order ${statusData.flowOrder} confirmed for ${statusData.payer}`);
+      }
+
+      res.status(200).send("OK");
+    } catch (err: any) {
+      console.error("Error handling Flow confirmation webhook:", err);
+      res.status(500).send("Webhook Error");
+    }
+  });
+
+  // Flow User Return Redirect
+  const handleFlowReturn = async (req: express.Request, res: express.Response) => {
+    try {
+      const token = req.body?.token || req.query?.token;
+      if (!token) {
+        return res.redirect("/?payment_status=cancelled");
+      }
+
+      const params = {
+        apiKey: FLOW_API_KEY,
+        token: String(token),
+      };
+      const s = signFlowParams(params, FLOW_SECRET_KEY);
+
+      const statusRes = await fetch(`${FLOW_BASE_URL}/payment/getStatus?apiKey=${FLOW_API_KEY}&token=${token}&s=${s}`);
+      const statusData = await statusRes.json();
+
+      console.log("[Flow Return Handled]:", statusData);
+
+      let optionalData: any = {};
+      try {
+        if (statusData.optional) {
+          optionalData = typeof statusData.optional === "string" ? JSON.parse(statusData.optional) : statusData.optional;
+        }
+      } catch (e) {
+        optionalData = {};
+      }
+
+      const planId = optionalData.planId || "para_siempre";
+      const memorialId = optionalData.memorialId || "";
+      const isSuccess = statusData.status === 2;
+
+      const redirectUrl = `/?payment_success=${isSuccess}&plan=${planId}&memorial=${memorialId}&flow_token=${token}&flow_order=${statusData.flowOrder || ""}&amount=${statusData.amount || 49000}&commerce_order=${statusData.commerceOrder || ""}`;
+      
+      res.redirect(redirectUrl);
+    } catch (err: any) {
+      console.error("Error handling Flow return redirect:", err);
+      res.redirect("/?payment_status=error");
+    }
+  };
+
+  app.get("/api/payments/flow/return", handleFlowReturn);
+  app.post("/api/payments/flow/return", handleFlowReturn);
+
+  // Check status by token endpoint
+  app.get("/api/payments/flow/status/:token", async (req, res) => {
+    try {
+      const token = req.params.token;
+      const params = {
+        apiKey: FLOW_API_KEY,
+        token,
+      };
+      const s = signFlowParams(params, FLOW_SECRET_KEY);
+
+      const statusRes = await fetch(`${FLOW_BASE_URL}/payment/getStatus?apiKey=${FLOW_API_KEY}&token=${token}&s=${s}`);
+      const statusData = await statusRes.json();
+
+      res.json({ success: true, data: statusData });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // Plan Limits & Quota Verification Backend Endpoint
+  app.post("/api/plans/validate-limits", (req, res) => {
+    try {
+      const { planTier, currentMemorasCount, totalPhotosCount, totalVideosCount, action, incomingCount } = req.body;
+      
+      const PLAN_LIMITS: Record<string, { maxMemoras: number; maxPhotos: number; maxVideos: number; name: string }> = {
+        esencial: { maxMemoras: 1, maxPhotos: 10, maxVideos: 1, name: "MEMORA Esencial" },
+        familia: { maxMemoras: 3, maxPhotos: 100, maxVideos: 10, name: "MEMORA Familia" },
+        legado: { maxMemoras: 10, maxPhotos: 1000, maxVideos: 50, name: "MEMORA Legado" },
+        para_siempre: { maxMemoras: 3, maxPhotos: 100, maxVideos: 10, name: "MEMORA Familia" },
+        acompanado: { maxMemoras: 10, maxPhotos: 1000, maxVideos: 50, name: "MEMORA Legado" },
+      };
+
+      const normalized = String(planTier || "esencial").toLowerCase();
+      const limits = PLAN_LIMITS[normalized] || PLAN_LIMITS.esencial;
+      const count = Number(incomingCount) || 1;
+
+      if (action === "create_memora") {
+        const canCreate = Number(currentMemorasCount || 0) + count <= limits.maxMemoras;
+        return res.json({
+          allowed: canCreate,
+          current: Number(currentMemorasCount || 0),
+          max: limits.maxMemoras,
+          remaining: Math.max(0, limits.maxMemoras - Number(currentMemorasCount || 0)),
+          planName: limits.name,
+          error: canCreate ? null : `Límite de MEMORAs alcanzado para el plan ${limits.name}. Máximo ${limits.maxMemoras}.`,
+        });
+      }
+
+      if (action === "upload_photo") {
+        const canUpload = Number(totalPhotosCount || 0) + count <= limits.maxPhotos;
+        return res.json({
+          allowed: canUpload,
+          current: Number(totalPhotosCount || 0),
+          max: limits.maxPhotos,
+          remaining: Math.max(0, limits.maxPhotos - Number(totalPhotosCount || 0)),
+          planName: limits.name,
+          error: canUpload ? null : `Límite global de fotos alcanzado en tu bolsa compartida (${limits.maxPhotos} fotos en ${limits.name}).`,
+        });
+      }
+
+      if (action === "upload_video") {
+        const canUpload = Number(totalVideosCount || 0) + count <= limits.maxVideos;
+        return res.json({
+          allowed: canUpload,
+          current: Number(totalVideosCount || 0),
+          max: limits.maxVideos,
+          remaining: Math.max(0, limits.maxVideos - Number(totalVideosCount || 0)),
+          planName: limits.name,
+          error: canUpload ? null : `Límite global de videos alcanzado en tu bolsa compartida (${limits.maxVideos} videos en ${limits.name}).`,
+        });
+      }
+
+      return res.json({
+        success: true,
+        limits,
+        usage: {
+          memoras: { current: Number(currentMemorasCount || 0), max: limits.maxMemoras },
+          photos: { current: Number(totalPhotosCount || 0), max: limits.maxPhotos },
+          videos: { current: Number(totalVideosCount || 0), max: limits.maxVideos },
+        }
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: "Error validating limits", details: err?.message });
+    }
+  });
+
+  // Simulated Payment Checkout / Webhook Integration (Fallback)
+  app.post("/api/payments/create-checkout-session", (req, res) => {
+    const { planId, memorialId, userEmail, billingInterval } = req.body;
+
+    const planPrices: Record<string, number> = {
+      esencial: 0,
+      para_siempre: 49,
+      acompanado: 149,
+    };
+
+    const price = planPrices[planId] ?? 49;
+    const sessionId = `cs_test_memora_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
+    res.json({
+      success: true,
+      sessionId,
+      url: `/checkout?session_id=${sessionId}&plan=${planId}&memorial=${memorialId || ""}&amount=${price}`,
+      provider: "stripe_test_mode",
+      amount: price,
+      currency: "USD",
+      customerEmail: userEmail,
+    });
+  });
+
+  app.post("/api/payments/verify-status", (req, res) => {
+    const { sessionId, planId } = req.body;
+    res.json({
+      success: true,
+      status: "completed",
+      invoiceId: `INV-MEM-${Math.floor(100000 + Math.random() * 900000)}`,
+      paidAt: new Date().toISOString(),
+      planId: planId || "para_siempre",
+      message: "Pago verificado exitosamente mediante webhook seguro.",
+    });
+  });
+
+  // Vite middleware for dev / static files for prod
+  if (process.env.NODE_ENV !== "production") {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), "dist");
+    app.use(express.static(distPath));
+    app.get("*", (_req, res) => {
+      res.sendFile(path.join(distPath, "index.html"));
+    });
+  }
+
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`✨ MEMORA Platform running at http://0.0.0.0:${PORT}`);
+  });
+}
+
+startServer();

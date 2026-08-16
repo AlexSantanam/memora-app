@@ -1,0 +1,6 @@
+{
+  "name": "MEMORA — Recuerdos Para Siempre",
+  "description": "Plataforma digital para crear, preservar y compartir memoriales y legados de vida eternos con historias asistidas por IA, galerías, homenajes y códigos QR.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
