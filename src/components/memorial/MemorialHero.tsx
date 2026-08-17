@@ -184,7 +184,7 @@ export const MemorialHero: React.FC<MemorialHeroProps> = ({
         </div>
 
         {/* Dates & Location on bottom of cover (mobile friendly) */}
-        <div className="absolute bottom-4 left-4 sm:left-8 right-4 sm:right-8 flex flex-col sm:flex-row sm:items-end justify-between gap-2 text-white">
+        <div className="absolute bottom-20 sm:bottom-24 lg:bottom-28 left-4 sm:left-8 right-4 sm:right-8 flex flex-col sm:flex-row sm:items-end justify-between gap-2 text-white">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs sm:text-sm text-[#EAE3D9] font-light">
             <span className="flex items-center gap-1.5">
               <Calendar className="w-3.5 h-3.5 text-[#C5A880]" />
@@ -217,7 +217,7 @@ export const MemorialHero: React.FC<MemorialHeroProps> = ({
             </div>
 
             {/* Titles & Nickname */}
-            <div className="space-y-1.5 pt-2 sm:pt-4">
+            <div className="space-y-1.5 pt-2 sm:pt-10 lg:pt-12">
               {memorial.type === "pet" && (
                 <div className="flex items-center justify-center sm:justify-start gap-2 mb-1">
                   <span className="text-[11px] font-bold uppercase tracking-wider px-3 py-0.5 rounded-full bg-[#EAE3D9] text-[#7A4E38] border border-[#D8CEBE]">

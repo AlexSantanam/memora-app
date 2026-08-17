@@ -8,6 +8,7 @@ import {
   DollarSign,
   Search,
   Eye,
+  Edit3,
   Trash2,
   CheckCircle2,
   Lock,
@@ -15,7 +16,7 @@ import {
 } from "lucide-react";
 
 export const AdminPortal: React.FC = () => {
-  const { metrics, memorials, openMemorialBySlug, deleteMemorial, setCurrentView } = useApp();
+  const { metrics, memorials, openMemorialBySlug, openMemorialEdit, deleteMemorial, setCurrentView } = useApp();
   const [searchTerm, setSearchTerm] = useState("");
 
   const filteredMemorials = memorials.filter(
@@ -163,6 +164,13 @@ export const AdminPortal: React.FC = () => {
                         title="Ver memorial"
                       >
                         <Eye className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => openMemorialEdit(m.id)}
+                        className="p-1.5 rounded-lg text-stone-500 hover:text-[#7A4E38] hover:bg-[#FAF7F2]"
+                        title="Editar memorial"
+                      >
+                        <Edit3 className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => {

@@ -93,7 +93,7 @@ export const PetsLandingSection: React.FC = () => {
               </button>
 
               <button
-                onClick={() => openMemorialBySlug("mateo-golden-retriever")}
+                onClick={() => openMemorialBySlug("mateo-el-noble")}
                 className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded-full bg-white text-[#24201D] border border-[#D8CEBE] hover:border-[#C5A880] text-xs sm:text-sm font-semibold transition-all cursor-pointer shadow-xs"
                 id="pets-view-sample-btn"
               >
@@ -126,10 +126,10 @@ export const PetsLandingSection: React.FC = () => {
                     Golden Retriever · Perro
                   </span>
                   <p className="font-serif text-2xl font-medium leading-tight">
-                    Mateo "Teíto"
+                    Mateo "Matito"
                   </p>
                   <p className="text-xs text-stone-200 font-light mt-0.5">
-                    2011 — 2024 · Santiago, Chile
+                    2010 — 2024 · Valdivia, Chile
                   </p>
                 </div>
               </div>
@@ -137,17 +137,17 @@ export const PetsLandingSection: React.FC = () => {
               {/* Memory Highlight Bento */}
               <div className="p-1 space-y-3">
                 <div className="p-3.5 rounded-2xl bg-[#FAF7F2] border border-[#EAE3D9] text-xs text-[#4A423B] leading-relaxed italic">
-                  "El compañero más noble y alegre que una familia pudo haber soñado. Corredor incansable de la playa de Zapallar y guardián amoroso de cada siesta."
+                  "Nos diste 14 años de alegría incondicional, miradas llenas de ternura y el amor más noble y puro que jamás conocimos."
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 text-[11px]">
                   <div className="p-2.5 rounded-xl bg-white border border-[#EAE3D9] space-y-0.5">
                     <span className="text-[#8C827A] block font-medium">☀️ Rincón favorito</span>
-                    <span className="font-semibold text-[#24201D] text-xs">Junto al gran ventanal</span>
+                    <span className="font-semibold text-[#24201D] text-xs">El tapete junto al ventanal</span>
                   </div>
                   <div className="p-2.5 rounded-xl bg-white border border-[#EAE3D9] space-y-0.5">
                     <span className="text-[#8C827A] block font-medium">🎾 Su pasión</span>
-                    <span className="font-semibold text-[#24201D] text-xs">Su pelota amarilla de tenis</span>
+                    <span className="font-semibold text-[#24201D] text-xs">Las pelotas de tenis desgastadas</span>
                   </div>
                 </div>
 
@@ -167,7 +167,7 @@ export const PetsLandingSection: React.FC = () => {
                 </div>
 
                 <button
-                  onClick={() => openMemorialBySlug("mateo-golden-retriever")}
+                  onClick={() => openMemorialBySlug("mateo-el-noble")}
                   className="w-full py-2.5 rounded-xl bg-[#24201D] text-white hover:bg-[#3D3530] text-xs font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer"
                 >
                   <Flame className="w-3.5 h-3.5 text-[#C5A880]" />
