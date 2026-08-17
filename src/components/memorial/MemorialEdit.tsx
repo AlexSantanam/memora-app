@@ -57,6 +57,7 @@ export const MemorialEdit: React.FC = () => {
     userUsage,
     setSelectedPlanForCheckout,
     setActivePrintableMemorial,
+    currentUser,
   } = useApp();
 
   if (!currentMemorial) {
@@ -76,6 +77,13 @@ export const MemorialEdit: React.FC = () => {
   // Local Form State initialized from currentMemorial
   const [formData, setFormData] = useState<Memorial>(currentMemorial);
   const [isSaving, setIsSaving] = useState(false);
+
+  // True when an admin opened this editor on a memorial they don't own —
+  // e.g. to help a grieving family quickly, at the owner's request.
+  const isEditingOnBehalf =
+    currentUser?.role === "admin" &&
+    currentMemorial.ownerId !== currentUser.id &&
+    !currentMemorial.collaborators?.some((c) => c.email === currentUser.email);
 
   const editMainPhotoRef = useRef<HTMLInputElement>(null);
   const editCoverPhotoRef = useRef<HTMLInputElement>(null);
@@ -267,14 +275,26 @@ export const MemorialEdit: React.FC = () => {
   return (
     <div className="min-h-screen bg-[#FAF7F2] py-8 px-4 sm:px-6 lg:px-8">
       <div className="max-w-6xl mx-auto space-y-6">
-        
+
+        {/* Admin Assisting Notice */}
+        {isEditingOnBehalf && (
+          <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 flex items-start gap-3">
+            <Shield className="w-4 h-4 text-amber-700 flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-amber-900">
+              Estás editando este memorial como <strong>administrador</strong>, en nombre de{" "}
+              <strong>{currentMemorial.ownerName}</strong> ({currentMemorial.ownerEmail}). Úsalo solo para ayudas
+              puntuales solicitadas por el cliente.
+            </p>
+          </div>
+        )}
+
         {/* Top Control Bar */}
         <div className="bg-white rounded-3xl p-5 sm:p-6 border border-[#EAE3D9] shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <button
-              onClick={() => setCurrentView("dashboard")}
+              onClick={() => setCurrentView(isEditingOnBehalf ? "admin" : "dashboard")}
               className="p-2.5 rounded-2xl bg-[#FAF7F2] hover:bg-[#F4EFEA] border border-[#D8CEBE] text-[#24201D] transition-colors"
-              title="Volver al Dashboard"
+              title={isEditingOnBehalf ? "Volver al Panel Administrativo" : "Volver al Dashboard"}
             >
               <ArrowLeft className="w-4 h-4" />
             </button>
