@@ -217,7 +217,7 @@ export const MemorialHero: React.FC<MemorialHeroProps> = ({
             </div>
 
             {/* Titles & Nickname */}
-            <div className="space-y-1.5 pt-2 sm:pt-10 lg:pt-12">
+            <div className="space-y-1.5 pt-2 sm:pt-20">
               {memorial.type === "pet" && (
                 <div className="flex items-center justify-center sm:justify-start gap-2 mb-1">
                   <span className="text-[11px] font-bold uppercase tracking-wider px-3 py-0.5 rounded-full bg-[#EAE3D9] text-[#7A4E38] border border-[#D8CEBE]">
