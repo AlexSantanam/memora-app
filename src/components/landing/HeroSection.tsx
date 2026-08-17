@@ -25,13 +25,12 @@ export const HeroSection: React.FC = () => {
 
             {/* Main Headline */}
             <h1 className="font-serif text-4xl sm:text-5xl lg:text-6xl text-[#24201D] font-normal tracking-tight leading-[1.15]">
-              Su historia merece <br />
-              <span className="italic font-medium text-[#7A4E38]">permanecer para siempre.</span>
+              Recuerdos <span className="italic font-medium text-[#7A4E38]">para siempre.</span>
             </h1>
 
             {/* Subtitle */}
             <p className="text-base sm:text-lg text-[#5C534B] leading-relaxed max-w-2xl mx-auto lg:mx-0 font-normal">
-              Crea un espacio digital para reunir fotografías, videos, historias y recuerdos de quienes forman parte de tu vida. Un lugar íntimo donde su legado continúa inspirando a las siguientes generaciones.
+              Crea un espacio digital íntimo para honrar, recordar y compartir la historia de quienes amas.
             </p>
 
             {/* Call to Action Buttons */}
@@ -54,15 +53,18 @@ export const HeroSection: React.FC = () => {
               </button>
 
               <button
-                onClick={() => {
-                  document.getElementById("como-funciona")?.scrollIntoView({ behavior: "smooth" });
-                }}
+                onClick={() => openMemorialBySlug("maria-gonzalez-valparaiso")}
                 className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-4 rounded-full bg-white/80 hover:bg-white text-[#24201D] border border-[#D8CEBE] text-sm sm:text-base font-medium transition-all shadow-xs hover:border-[#C5A880] cursor-pointer"
                 id="hero-how-it-works-btn"
               >
-                <span>Ver cómo funciona</span>
+                <span>Ver ejemplo</span>
               </button>
             </div>
+
+            {/* Starting Price */}
+            <p className="text-xs sm:text-sm text-[#7A4E38] font-medium -mt-1">
+              Desde <span className="font-semibold">$990 al año</span>
+            </p>
 
             {/* Reassurance Micro-items */}
             <div className="pt-6 border-t border-[#EAE3D9] flex flex-wrap items-center justify-center lg:justify-start gap-y-2 gap-x-6 text-xs text-[#7A7067]">

@@ -15,7 +15,6 @@ import {
   AlertCircle,
   KeyRound,
   CheckCircle2,
-  ArrowLeft,
   Smartphone,
   Upload,
   Camera,
@@ -53,10 +52,7 @@ export const AuthModal: React.FC = () => {
   const [newPassword, setNewPassword] = useState("");
   const [sentCodeHint, setSentCodeHint] = useState<string | null>(null);
 
-  // Google Selector Modal state
-  const [showGoogleSelector, setShowGoogleSelector] = useState(false);
-  const [customGoogleEmail, setCustomGoogleEmail] = useState("");
-  const [customGoogleName, setCustomGoogleName] = useState("");
+  const GOOGLE_CLIENT_ID = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID as string | undefined;
 
   // Feedback & Loading
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -154,19 +150,62 @@ export const AuthModal: React.FC = () => {
     }
   };
 
-  const handleExecuteGoogleLogin = async (profile?: { name?: string; email?: string; avatarUrl?: string }) => {
-    setLoading(true);
-    try {
-      const res = await googleLogin(profile);
-      if (res.success) {
-        setShowGoogleSelector(false);
-        setIsAuthModalOpen(false);
-      } else {
-        setErrorMessage(res.error || "Error al conectar con Google.");
-      }
-    } finally {
-      setLoading(false);
+  // Real Google OAuth: opens Google's own consent popup, then verifies the
+  // account directly against Google's userinfo endpoint (no unverified input).
+  const handleGoogleOAuthLogin = () => {
+    setErrorMessage(null);
+
+    if (!GOOGLE_CLIENT_ID) {
+      setErrorMessage("El inicio de sesión con Google aún no está configurado en este entorno.");
+      return;
     }
+
+    const google = (window as any).google;
+    if (!google?.accounts?.oauth2) {
+      setErrorMessage("No se pudo cargar Google. Verifica tu conexión e intenta de nuevo.");
+      return;
+    }
+
+    setLoading(true);
+    const tokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: GOOGLE_CLIENT_ID,
+      scope: "openid email profile",
+      callback: async (tokenResponse: any) => {
+        try {
+          if (!tokenResponse?.access_token) {
+            throw new Error("No se recibió autorización de Google.");
+          }
+          const res = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+            headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
+          });
+          if (!res.ok) throw new Error("No se pudo verificar la cuenta de Google.");
+          const profile = await res.json();
+
+          const result = await googleLogin({
+            email: profile.email,
+            name: profile.name,
+            avatarUrl: profile.picture,
+          });
+
+          if (result.success) {
+            setIsAuthModalOpen(false);
+          } else {
+            setErrorMessage(result.error || "No se pudo iniciar sesión con Google.");
+          }
+        } catch (err: any) {
+          setErrorMessage(err?.message || "Error al conectar con Google.");
+        } finally {
+          setLoading(false);
+        }
+      },
+      error_callback: (err: any) => {
+        setLoading(false);
+        if (err?.type !== "popup_closed") {
+          setErrorMessage("La autorización con Google fue cancelada o falló.");
+        }
+      },
+    });
+    tokenClient.requestAccessToken();
   };
 
   return (
@@ -181,102 +220,7 @@ export const AuthModal: React.FC = () => {
           <X className="w-5 h-5" />
         </button>
 
-        {/* GOOGLE ACCOUNT SELECTOR SUB-MODAL */}
-        {showGoogleSelector ? (
-          <div className="space-y-5 animate-in fade-in duration-200">
-            <div className="flex items-center gap-2 pb-3 border-b border-[#EAE3D9]">
-              <button
-                onClick={() => setShowGoogleSelector(false)}
-                className="p-1 rounded-lg hover:bg-[#F4EFEA] text-[#7A4E38] transition-colors cursor-pointer"
-              >
-                <ArrowLeft className="w-4 h-4" />
-              </button>
-              <h3 className="font-serif text-lg text-[#24201D] font-medium">
-                Acceder con Google
-              </h3>
-            </div>
-
-            <p className="text-xs text-[#5C534B]">
-              Selecciona una cuenta de Google para iniciar sesión o registrarte instantáneamente en MEMORA:
-            </p>
-
-            {/* Google Primary Account Card */}
-            <div className="space-y-2.5">
-              <button
-                onClick={() =>
-                  handleExecuteGoogleLogin({
-                    email: "conectadoaia@gmail.com",
-                    name: "Conectado AI",
-                    avatarUrl: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=300&q=80",
-                  })
-                }
-                disabled={loading}
-                className="w-full p-3.5 rounded-2xl border border-[#D8CEBE] hover:border-[#C5A880] bg-[#FAF7F2] hover:bg-white text-left flex items-center justify-between transition-all group cursor-pointer shadow-xs"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-stone-900 text-white font-bold flex items-center justify-center text-sm border-2 border-white shadow-xs">
-                    C
-                  </div>
-                  <div>
-                    <span className="font-semibold text-xs text-[#24201D] block group-hover:text-[#7A4E38]">
-                      Conectado AI
-                    </span>
-                    <span className="text-[11px] text-[#7A7067]">conectadoaia@gmail.com</span>
-                  </div>
-                </div>
-                <div className="w-7 h-7 rounded-full bg-white border border-[#D8CEBE] flex items-center justify-center group-hover:bg-[#24201D] group-hover:text-white transition-colors">
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </div>
-              </button>
-
-              {/* Custom Google Email Form */}
-              <div className="p-4 rounded-2xl bg-white border border-[#EAE3D9] space-y-3">
-                <span className="text-xs font-semibold text-[#24201D] block">
-                  O usa otra cuenta Google (@gmail.com):
-                </span>
-                <div className="space-y-2">
-                  <input
-                    type="text"
-                    value={customGoogleName}
-                    onChange={(e) => setCustomGoogleName(e.target.value)}
-                    placeholder="Tu nombre (Ej. María José)"
-                    className="w-full px-3 py-2 rounded-xl bg-[#FAF7F2] border border-[#D8CEBE] text-xs text-[#24201D] focus:outline-none focus:border-[#C5A880]"
-                  />
-                  <input
-                    type="email"
-                    value={customGoogleEmail}
-                    onChange={(e) => setCustomGoogleEmail(e.target.value)}
-                    placeholder="ejemplo@gmail.com"
-                    className="w-full px-3 py-2 rounded-xl bg-[#FAF7F2] border border-[#D8CEBE] text-xs text-[#24201D] focus:outline-none focus:border-[#C5A880]"
-                  />
-                </div>
-                <button
-                  onClick={() => {
-                    if (!customGoogleEmail.includes("@")) {
-                      setErrorMessage("Ingresa un correo Google válido.");
-                      return;
-                    }
-                    handleExecuteGoogleLogin({
-                      email: customGoogleEmail,
-                      name: customGoogleName || customGoogleEmail.split("@")[0],
-                    });
-                  }}
-                  disabled={loading || !customGoogleEmail}
-                  className="w-full py-2.5 rounded-xl bg-[#24201D] text-white hover:bg-[#3D3530] text-xs font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-50"
-                >
-                  <span>Continuar con esta cuenta Google</span>
-                  <ArrowRight className="w-3.5 h-3.5 text-[#C5A880]" />
-                </button>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 text-[11px] text-[#8C827A] pt-2">
-              <ShieldCheck className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-              <span>Conexión cifrada directa con los servidores de autenticación.</span>
-            </div>
-          </div>
-        ) : (
-          <>
+        <>
             {/* Header */}
             <div className="text-center mb-6 space-y-2">
               <Logo variant="dark" size="sm" showTagline={true} className="justify-center" />
@@ -316,8 +260,9 @@ export const AuthModal: React.FC = () => {
               <div className="space-y-4 mb-6">
                 <button
                   type="button"
-                  onClick={() => setShowGoogleSelector(true)}
-                  className="w-full py-3 px-4 rounded-2xl border border-[#D8CEBE] hover:border-[#C5A880] bg-white hover:bg-[#FAF7F2] text-xs font-semibold text-[#24201D] flex items-center justify-center gap-3 transition-all shadow-xs cursor-pointer active:scale-[0.99]"
+                  onClick={handleGoogleOAuthLogin}
+                  disabled={loading}
+                  className="w-full py-3 px-4 rounded-2xl border border-[#D8CEBE] hover:border-[#C5A880] bg-white hover:bg-[#FAF7F2] text-xs font-semibold text-[#24201D] flex items-center justify-center gap-3 transition-all shadow-xs cursor-pointer active:scale-[0.99] disabled:opacity-50"
                   id="google-signin-button"
                 >
                   <svg className="w-4 h-4" viewBox="0 0 24 24">
@@ -639,49 +584,7 @@ export const AuthModal: React.FC = () => {
                 </p>
               )}
             </div>
-
-            {/* Demo Fast Logins for Testing */}
-            <div className="mt-5 p-3.5 rounded-2xl bg-[#FAF7F2] border border-[#D8CEBE] text-[11px] text-[#7A7067] space-y-2.5">
-              <span className="font-semibold block text-[#24201D]">Cuentas de prueba listas para usar:</span>
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEmail("carolina.valenzuela@ejemplo.com");
-                    setPassword("password123");
-                    login("carolina.valenzuela@ejemplo.com", "password123");
-                  }}
-                  className="px-2.5 py-1.5 rounded-xl bg-white border border-[#D8CEBE] text-[11px] font-medium text-[#24201D] hover:bg-[#F4EFEA] transition-colors cursor-pointer"
-                >
-                  👤 Familiar (Carolina)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEmail("admin@memora.com");
-                    setPassword("password123");
-                    login("admin@memora.com", "password123");
-                  }}
-                  className="px-2.5 py-1.5 rounded-xl bg-white border border-[#D8CEBE] text-[11px] font-medium text-[#7A4E38] hover:bg-[#F4EFEA] transition-colors cursor-pointer"
-                >
-                  🛡️ Administrador
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleExecuteGoogleLogin({
-                      email: "conectadoaia@gmail.com",
-                      name: "Conectado AI",
-                    })
-                  }
-                  className="px-2.5 py-1.5 rounded-xl bg-white border border-[#D8CEBE] text-[11px] font-medium text-blue-700 hover:bg-blue-50 transition-colors cursor-pointer"
-                >
-                  🔵 Google (Conectado AI)
-                </button>
-              </div>
-            </div>
-          </>
-        )}
+        </>
 
       </div>
     </div>

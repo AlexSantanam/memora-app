@@ -234,9 +234,12 @@ export const Footer: React.FC = () => {
 
         {/* Bottom Credits and Disclaimers */}
         <div className="pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-[#8C827A]">
-          <div className="flex items-center gap-2">
-            <Globe className="w-4 h-4 text-[#A89F95]" />
-            <span>Español (Latinoamérica) · Precios en USD</span>
+          <div className="flex flex-col items-center sm:items-start gap-1">
+            <div className="flex items-center gap-2">
+              <Globe className="w-4 h-4 text-[#A89F95]" />
+              <span>Español (Latinoamérica) · Precios en CLP</span>
+            </div>
+            <span className="text-[#7A7067]">MEMORA es un proyecto de Uni-Verso693</span>
           </div>
           <p className="text-center sm:text-right">
             © {new Date().getFullYear()} MEMORA. Recuerdos Para Siempre. Todos los derechos reservados.

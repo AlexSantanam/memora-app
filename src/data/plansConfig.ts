@@ -42,7 +42,7 @@ export const CENTRALIZED_PLANS: Record<"esencial" | "familia" | "legado", PlanLi
     id: "esencial",
     name: "MEMORA Esencial",
     shortName: "Esencial",
-    tagline: "Para personas que quieren conservar un recuerdo de forma sencilla, accesible y permanente.",
+    tagline: "Para comenzar a recordar.",
     commercialMessage: "Todo lo esencial para conservar su memoria.",
     priceAnnualCLP: 990,
     priceMonthlyCLP: 990,
@@ -58,18 +58,13 @@ export const CENTRALIZED_PLANS: Record<"esencial" | "familia" | "legado", PlanLi
     isPopular: false,
     ctaText: "Elegir Plan Esencial",
     features: [
-      "1 MEMORA (Persona o Mascota)",
-      "10 fotografías en total",
-      "0 videos (exclusivo fotos)",
-      "Página pública de la MEMORA",
-      "Código QR único permanente",
-      "Compartir mediante enlace",
-      "Muro de homenajes y condolencias",
-      "Historia y recuerdos",
-      "Recuerdo para imprimir incluido",
-      "Descarga del recuerdo imprimible en PDF",
-      "Herramientas de IA disponibles en MEMORA",
-      "Ayuda mediante WhatsApp",
+      "1 espacio MEMORA",
+      "10 fotografías",
+      "Código QR único",
+      "Recuerdo imprimible",
+      "PDF en alta resolución",
+      "Herramientas de IA",
+      "Soporte por WhatsApp",
     ],
     comparativeRows: {
       priceLabel: "$990",
@@ -90,7 +85,7 @@ export const CENTRALIZED_PLANS: Record<"esencial" | "familia" | "legado", PlanLi
     id: "familia",
     name: "MEMORA Familia",
     shortName: "Familia",
-    tagline: "Para familias que quieren conservar y compartir varias historias.",
+    tagline: "Para conservar más historias juntos.",
     commercialMessage: "Para conservar más historias y compartirlas con quienes más quieres.",
     priceAnnualCLP: 4900,
     priceMonthlyCLP: 4900,
@@ -104,21 +99,18 @@ export const CENTRALIZED_PLANS: Record<"esencial" | "familia" | "legado", PlanLi
     subText: "Pago anual",
     renewalText: "Renovación anual: $4.900 CLP",
     isPopular: true,
-    popularBadgeText: "Recomendado para familias",
+    popularBadgeText: "Más elegido",
     ctaText: "Elegir Plan Familia",
     features: [
-      "Hasta 3 MEMORAs (Personas o Mascotas)",
-      "100 fotografías TOTALES POR PLAN",
-      "10 videos TOTALES POR PLAN",
-      "Página pública para cada MEMORA",
-      "Código QR individual para cada MEMORA",
-      "Compartir mediante enlace",
-      "Muro de homenajes y condolencias",
-      "Historias y recuerdos",
-      "Recuerdo para imprimir para cada MEMORA",
-      "Descarga en PDF de alta resolución",
-      "Herramientas de IA disponibles en MEMORA",
-      "Ayuda mediante WhatsApp",
+      "Hasta 3 espacios MEMORA",
+      "100 fotografías",
+      "10 videos",
+      "Código QR único",
+      "Recuerdo imprimible",
+      "PDF en alta resolución",
+      "Herramientas de IA",
+      "Soporte por WhatsApp",
+      "Funciones familiares avanzadas",
     ],
     comparativeRows: {
       priceLabel: "$4.900",
@@ -139,7 +131,7 @@ export const CENTRALIZED_PLANS: Record<"esencial" | "familia" | "legado", PlanLi
     id: "legado",
     name: "MEMORA Legado",
     shortName: "Legado",
-    tagline: "Para familias que quieren preservar un legado más completo.",
+    tagline: "Para preservar una historia completa.",
     commercialMessage: "Para preservar el legado de toda una familia.",
     priceAnnualCLP: 14900,
     priceMonthlyCLP: 14900,
@@ -155,19 +147,15 @@ export const CENTRALIZED_PLANS: Record<"esencial" | "familia" | "legado", PlanLi
     isPopular: false,
     ctaText: "Elegir Plan Legado",
     features: [
-      "Hasta 10 MEMORAs (Personas o Mascotas)",
-      "1.000 fotografías TOTALES POR PLAN",
-      "50 videos TOTALES POR PLAN",
-      "Página pública individual para cada MEMORA",
-      "Código QR individual para cada MEMORA",
-      "Compartir mediante enlace",
-      "Muro de homenajes y condolencias",
-      "Historias y recuerdos",
-      "Recuerdo para imprimir para cada MEMORA",
-      "Descarga en PDF de alta resolución",
-      "Herramientas de IA disponibles en MEMORA",
-      "Ayuda mediante WhatsApp",
-      "Funciones premium disponibles en MEMORA",
+      "Hasta 10 espacios MEMORA",
+      "1.000 fotografías",
+      "50 videos",
+      "Código QR único",
+      "Recuerdo imprimible",
+      "PDF en alta resolución",
+      "Herramientas de IA",
+      "Soporte por WhatsApp",
+      "Funciones premium prioritarias",
     ],
     comparativeRows: {
       priceLabel: "$14.900",
@@ -212,25 +200,53 @@ export function getPlanConfig(planId?: string | null): PlanLimitConfig {
 export function calculateUserGlobalUsage(
   userId: string | undefined,
   allMemorials: Array<any>,
-  userPlanId?: string | null
+  userPlanId?: string | null,
+  subscriptionStatus?: string | null
 ) {
   const plan = getPlanConfig(userPlanId);
+  // Only an actually-paid (or legitimately trialing) subscription unlocks quota.
+  // A freshly registered account with no completed payment gets zero capacity
+  // until it goes through Flow checkout — the base Esencial plan is $990, not free.
+  const isPaid = subscriptionStatus === "active" || subscriptionStatus === "free_trial";
 
   if (!userId) {
     return {
       plan,
+      isPaid: false,
       memorasUsed: 0,
-      memorasMax: plan.maxMemoras,
-      memorasRemaining: plan.maxMemoras,
-      canCreateMemora: true,
+      memorasMax: 0,
+      memorasRemaining: 0,
+      canCreateMemora: false,
       photosUsed: 0,
-      photosMax: plan.maxPhotosTotal,
-      photosRemaining: plan.maxPhotosTotal,
-      canUploadPhotos: (count = 1) => count <= plan.maxPhotosTotal,
+      photosMax: 0,
+      photosRemaining: 0,
+      canUploadPhotos: () => false,
       videosUsed: 0,
-      videosMax: plan.maxVideosTotal,
-      videosRemaining: plan.maxVideosTotal,
-      canUploadVideos: (count = 1) => count <= plan.maxVideosTotal,
+      videosMax: 0,
+      videosRemaining: 0,
+      canUploadVideos: () => false,
+    };
+  }
+
+  if (!isPaid) {
+    const userMemorials = allMemorials.filter(
+      (m) => m.ownerId === userId || m.collaborators?.some((c: any) => c.userId === userId && c.role === "owner")
+    );
+    return {
+      plan,
+      isPaid: false,
+      memorasUsed: userMemorials.length,
+      memorasMax: 0,
+      memorasRemaining: 0,
+      canCreateMemora: false,
+      photosUsed: 0,
+      photosMax: 0,
+      photosRemaining: 0,
+      canUploadPhotos: () => false,
+      videosUsed: 0,
+      videosMax: 0,
+      videosRemaining: 0,
+      canUploadVideos: () => false,
     };
   }
 
@@ -283,6 +299,7 @@ export function calculateUserGlobalUsage(
 
   return {
     plan,
+    isPaid: true,
     memorasUsed,
     memorasMax: plan.maxMemoras,
     memorasRemaining,

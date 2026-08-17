@@ -348,11 +348,11 @@ Genera 3 opciones de mensajes diferentes en formato JSON:
       };
 
       const planTitles: Record<string, string> = {
-        esencial: "MEMORA Esencial ($990 CLP/mes)",
-        familia: "MEMORA Familia ($4.900 CLP/mes)",
-        legado: "MEMORA Legado ($14.900 CLP/mes)",
-        para_siempre: "MEMORA Familia ($4.900 CLP/mes)",
-        acompanado: "MEMORA Legado ($14.900 CLP/mes)",
+        esencial: "MEMORA Esencial ($990 CLP/año)",
+        familia: "MEMORA Familia ($4.900 CLP/año)",
+        legado: "MEMORA Legado ($14.900 CLP/año)",
+        para_siempre: "MEMORA Familia ($4.900 CLP/año)",
+        acompanado: "MEMORA Legado ($14.900 CLP/año)",
       };
 
       const normalizedPlan = planId === "para_siempre" ? "familia" : planId === "acompanado" ? "legado" : (planId || "familia");

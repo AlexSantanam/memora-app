@@ -19,7 +19,7 @@ import {
   UserSubscription,
 } from "../types";
 
-import { INITIAL_USER, INITIAL_ACCOUNTS, INITIAL_MEMORIALS, DEFAULT_PLANS } from "../data/sampleData";
+import { INITIAL_ACCOUNTS, INITIAL_MEMORIALS, DEFAULT_PLANS } from "../data/sampleData";
 import {
   CENTRALIZED_PLANS,
   getPlanConfig,
@@ -50,6 +50,7 @@ interface ToastNotification {
 
 export interface UserUsageInfo {
   plan: PlanLimitConfig;
+  isPaid: boolean;
   memorasUsed: number;
   memorasMax: number;
   memorasRemaining: number;
@@ -128,6 +129,7 @@ interface AppContextType {
   // Payments & Plans
   selectedPlanForCheckout: PlanTier | null;
   setSelectedPlanForCheckout: (plan: PlanTier | null) => void;
+  goToPlanSelection: () => void;
   targetMemorialForCheckout: string | null;
   setTargetMemorialForCheckout: (id: string | null) => void;
   transactions: PaymentTransaction[];
@@ -219,9 +221,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           return parsed;
         }
       }
-      return INITIAL_USER;
+      return null;
     } catch {
-      return INITIAL_USER;
+      return null;
     }
   });
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
@@ -275,8 +277,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Computed Global Storage and Resource Usage
   const userUsage = useMemo<UserUsageInfo>(() => {
-    return calculateUserGlobalUsage(currentUser?.id, memorials, currentUser?.currentPlan);
-  }, [currentUser?.id, currentUser?.currentPlan, memorials]);
+    return calculateUserGlobalUsage(currentUser?.id, memorials, currentUser?.currentPlan, currentUser?.subscription?.status);
+  }, [currentUser?.id, currentUser?.currentPlan, currentUser?.subscription?.status, memorials]);
 
   // Sync to LocalStorage
   useEffect(() => {
@@ -368,7 +370,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           planId: normalizedPlan,
           status: "active",
           startDate: new Date().toISOString(),
-          nextRenewalDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+          nextRenewalDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
           priceCLP: planConfig.priceMonthlyCLP,
         };
 
@@ -429,6 +431,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const dismissNotification = (id: string) => {
     setNotifications((prev) => prev.filter((n) => n.id !== id));
+  };
+
+  // Sends the user to the plan comparison (landing page pricing section) so they
+  // can freely choose Esencial, Familia or Legado — instead of being locked into
+  // a single pre-selected checkout.
+  const goToPlanSelection = () => {
+    setCurrentView("landing");
+    setTimeout(() => {
+      document.getElementById("planes")?.scrollIntoView({ behavior: "smooth" });
+    }, 150);
   };
 
   // Auth Handlers
@@ -523,14 +535,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const now = new Date();
-    const freeTrialEnd = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000);
 
+    // No plan is free — the base Esencial plan is $990 CLP/year and must be
+    // paid through Flow before any MEMORA can be created. Registering only
+    // reserves the account; it does not grant usable quota.
     const initialSubscription: UserSubscription = {
       planId: "esencial",
-      status: "free_trial",
+      status: "pending_payment",
       startDate: now.toISOString(),
-      freeTrialEndDate: freeTrialEnd.toISOString(),
-      nextRenewalDate: freeTrialEnd.toISOString(),
       priceCLP: 990,
     };
 
@@ -570,8 +582,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     notify(
       "success",
       "¡Cuenta creada con éxito!",
-      "Tu plan MEMORA Esencial está activo con tu primer año gratis (365 días)."
+      "Elige el plan que mejor se ajuste a tu familia para activar tu MEMORA."
     );
+    goToPlanSelection();
     return { success: true };
   };
 
@@ -580,15 +593,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     email?: string;
     avatarUrl?: string;
   }): Promise<{ success: boolean; error?: string }> => {
-    const targetEmail = customProfile?.email || "conectadoaia@gmail.com";
-    const targetName = customProfile?.name || "Conectado AI";
-    const targetAvatar = customProfile?.avatarUrl || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=300&q=80";
+    if (!customProfile?.email) {
+      return { success: false, error: "No se recibió un correo verificado de Google." };
+    }
+    const targetEmail = customProfile.email;
+    const targetName = customProfile.name || targetEmail.split("@")[0];
+    const targetAvatar = customProfile.avatarUrl || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=300&q=80";
 
     const existingAccount = registeredAccounts.find(
       (a) => a.email.toLowerCase() === targetEmail.toLowerCase()
     );
 
     let loggedInUser: User;
+    const isNewSignup = !existingAccount;
 
     if (existingAccount) {
       const planConfig = getPlanConfig(existingAccount.currentPlan);
@@ -625,14 +642,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       );
     } else {
       const now = new Date();
-      const freeTrialEnd = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000);
 
+      // Same rule as email registration: no plan is free, Google sign-up only
+      // reserves the account until the $990 CLP Esencial plan is paid via Flow.
       const initialSubscription: UserSubscription = {
         planId: "esencial",
-        status: "free_trial",
+        status: "pending_payment",
         startDate: now.toISOString(),
-        freeTrialEndDate: freeTrialEnd.toISOString(),
-        nextRenewalDate: freeTrialEnd.toISOString(),
         priceCLP: 990,
       };
 
@@ -667,7 +683,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setCurrentUser(loggedInUser);
     setIsAuthModalOpen(false);
-    notify("success", "Sesión iniciada con Google", `Bienvenido de vuelta, ${loggedInUser.name}`);
+    if (isNewSignup) {
+      notify(
+        "success",
+        "Cuenta creada con Google",
+        "Elige el plan que mejor se ajuste a tu familia para activar tu MEMORA."
+      );
+      goToPlanSelection();
+    } else {
+      notify("success", "Sesión iniciada con Google", `Bienvenido de vuelta, ${loggedInUser.name}`);
+    }
     return { success: true };
   };
 
@@ -819,13 +844,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Memorial CRUD with Plan Limits Check
   const createMemorial = async (data: Partial<Memorial>): Promise<Memorial> => {
     if (!userUsage.canCreateMemora) {
-      notify(
-        "warning",
-        "Has alcanzado el límite de MEMORAs de tu plan",
-        `Actualmente utilizas ${userUsage.memorasUsed} de ${userUsage.memorasMax} MEMORAs permitidas en tu plan ${userUsage.plan.name}. Mejora tu plan para crear más espacios.`
-      );
-      setSelectedPlanForCheckout(userUsage.plan.id === "esencial" ? "familia" : "legado");
-      throw new Error("Límite de MEMORAs alcanzado");
+      if (!userUsage.isPaid) {
+        notify(
+          "warning",
+          "Necesitas activar un plan",
+          "Elige y activa un plan MEMORA para poder crear tu primera MEMORA."
+        );
+        goToPlanSelection();
+      } else {
+        notify(
+          "warning",
+          "Has alcanzado el límite de MEMORAs de tu plan",
+          `Actualmente utilizas ${userUsage.memorasUsed} de ${userUsage.memorasMax} MEMORAs permitidas en tu plan ${userUsage.plan.name}. Mejora tu plan para crear más espacios.`
+        );
+        setSelectedPlanForCheckout(userUsage.plan.id === "esencial" ? "familia" : "legado");
+      }
+      throw new Error("No se puede crear la MEMORA: plan no activo o límite alcanzado");
     }
 
     const baseSlug = (data.personName || "recuerdo-eterno")
@@ -1294,12 +1328,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const newSub: UserSubscription = {
       planId: normalizedPlan,
-      status: normalizedPlan === "esencial" ? "free_trial" : "active",
+      status: "active",
       startDate: new Date().toISOString(),
-      freeTrialEndDate: normalizedPlan === "esencial"
-        ? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()
-        : undefined,
-      nextRenewalDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      nextRenewalDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
       priceCLP: planConfig.priceMonthlyCLP,
     };
 
@@ -1406,6 +1437,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         selectedPlanForCheckout,
         setSelectedPlanForCheckout,
+        goToPlanSelection,
         targetMemorialForCheckout,
         setTargetMemorialForCheckout,
         transactions,

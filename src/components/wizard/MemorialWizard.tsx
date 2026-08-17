@@ -1,7 +1,6 @@
 import React, { useState, useRef } from "react";
 import { useApp } from "../../context/AppContext";
-import { Memorial, PrivacyLevel, PlanTier, MemorialType, PetSpecies } from "../../types";
-import { DEFAULT_PLANS } from "../../data/sampleData";
+import { Memorial, PrivacyLevel, MemorialType, PetSpecies } from "../../types";
 import { WhatsAppButton } from "../whatsapp/WhatsAppButton";
 import {
   Sparkles,
@@ -38,6 +37,7 @@ export const MemorialWizard: React.FC = () => {
     currentUser,
     userUsage,
     setSelectedPlanForCheckout,
+    goToPlanSelection,
   } = useApp();
 
   // Step 0: Type Selection ("¿A quién quieres recordar?")
@@ -72,7 +72,6 @@ export const MemorialWizard: React.FC = () => {
     biography: string;
     privacy: PrivacyLevel;
     password: string;
-    planId: PlanTier;
     // Pet specific fields
     species: string;
     breed: string;
@@ -94,14 +93,13 @@ export const MemorialWizard: React.FC = () => {
     passingDate: "",
     birthPlace: "",
     restingPlace: "",
-    mainPhoto: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=800&q=80",
+    mainPhoto: "",
     coverPhoto: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1600&q=80",
     quote: `"Su luz y su recuerdo permanecen siempre entre nosotros."`,
     summary: "",
     biography: "",
     privacy: "public",
     password: "",
-    planId: "para_siempre",
     // Pet defaults
     species: "perro",
     breed: "",
@@ -141,7 +139,6 @@ export const MemorialWizard: React.FC = () => {
   const sampleCoverPhotos = [
     "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1600&q=80",
     "https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?auto=format&fit=crop&w=1600&q=80",
-    "https://images.unsplash.com/photo-1518717758536-85ae29035b6d?auto=format&fit=crop&w=1600&q=80",
     "https://images.unsplash.com/photo-1518495973542-4542c06a5843?auto=format&fit=crop&w=1600&q=80",
   ];
 
@@ -159,14 +156,12 @@ export const MemorialWizard: React.FC = () => {
     if (type === "pet") {
       setFormData((prev) => ({
         ...prev,
-        mainPhoto: samplePetMainPhotos[0],
         quote: `"Nos diste años de alegría incondicional y el amor más puro que conocimos."`,
         summary: prev.summary || `En memoria amorosa de nuestro fiel compañero`,
       }));
     } else {
       setFormData((prev) => ({
         ...prev,
-        mainPhoto: samplePersonMainPhotos[0],
         quote: `"Su luz y su recuerdo permanecen siempre entre nosotros."`,
       }));
     }
@@ -245,7 +240,6 @@ export const MemorialWizard: React.FC = () => {
             : `${formData.personName} fue un ser humano excepcional, cuyo amor y recuerdos perdurarán eternamente.`),
         privacy: formData.privacy,
         password: formData.password,
-        planId: formData.planId,
         // Pet attributes
         species: memorialType === "pet" ? formData.species : undefined,
         breed: memorialType === "pet" ? formData.breed : undefined,
@@ -300,21 +294,28 @@ export const MemorialWizard: React.FC = () => {
               <Sparkles className="w-5 h-5 text-amber-700 flex-shrink-0 mt-0.5" />
               <div>
                 <h4 className="text-xs font-bold text-amber-900">
-                  Límite de MEMORAs alcanzado ({userUsage.memorasUsed} de {userUsage.memorasMax})
+                  {userUsage.isPaid
+                    ? `Límite de MEMORAs alcanzado (${userUsage.memorasUsed} de ${userUsage.memorasMax})`
+                    : "Necesitas activar tu plan para crear una MEMORA"}
                 </h4>
                 <p className="text-xs text-amber-800 mt-0.5">
-                  Tu plan actual ({userUsage.plan.name}) tiene copada su cuota de MEMORAs. Puedes mejorar a Plan Familia ($4.900/mes) o Legado ($14.900/mes) para crear más espacios y ampliar tu bolsa de fotos.
+                  {userUsage.isPaid
+                    ? `Tu plan actual (${userUsage.plan.name}) tiene copada su cuota de MEMORAs. Puedes mejorar a Plan Familia ($4.900/año) o Legado ($14.900/año) para crear más espacios y ampliar tu bolsa de fotos.`
+                    : "Tu cuenta aún no tiene un plan activo. Elige y activa un plan para poder crear tu primera MEMORA."}
                 </p>
               </div>
             </div>
             <button
               onClick={() => {
-                setSelectedPlanForCheckout(userUsage.plan.id === "esencial" ? "familia" : "legado");
-                setCurrentView("pricing");
+                if (userUsage.isPaid) {
+                  setSelectedPlanForCheckout(userUsage.plan.id === "esencial" ? "familia" : "legado");
+                } else {
+                  goToPlanSelection();
+                }
               }}
               className="px-4 py-2 rounded-full bg-amber-800 hover:bg-amber-900 text-white text-xs font-semibold whitespace-nowrap cursor-pointer transition-colors shadow-xs"
             >
-              Mejorar mi Plan
+              {userUsage.isPaid ? "Mejorar mi Plan" : "Elegir mi Plan"}
             </button>
           </div>
         )}
@@ -745,20 +746,36 @@ export const MemorialWizard: React.FC = () => {
                     />
 
                     <div className="flex items-center gap-4">
-                      <div className="w-24 h-24 rounded-2xl overflow-hidden bg-stone-100 border-2 border-[#C5A880] flex-shrink-0 relative group">
-                        <img
-                          src={formData.mainPhoto}
-                          alt="Retrato"
-                          className="w-full h-full object-cover"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => mainPhotoInputRef.current?.click()}
-                          className="absolute inset-0 bg-black/40 text-white opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center transition-opacity cursor-pointer text-[10px] font-medium"
-                        >
-                          <Camera className="w-4 h-4 mb-0.5" />
-                          <span>Cambiar</span>
-                        </button>
+                      <div
+                        onClick={() => mainPhotoInputRef.current?.click()}
+                        className={`w-24 h-24 rounded-2xl overflow-hidden flex-shrink-0 relative group cursor-pointer ${
+                          formData.mainPhoto
+                            ? "bg-stone-100 border-2 border-[#C5A880]"
+                            : "bg-[#FAF7F2] border-2 border-dashed border-[#D8CEBE] flex flex-col items-center justify-center text-[#8C827A]"
+                        }`}
+                      >
+                        {formData.mainPhoto ? (
+                          <>
+                            <img
+                              src={formData.mainPhoto}
+                              alt="Retrato"
+                              className="w-full h-full object-cover"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => mainPhotoInputRef.current?.click()}
+                              className="absolute inset-0 bg-black/40 text-white opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center transition-opacity cursor-pointer text-[10px] font-medium"
+                            >
+                              <Camera className="w-4 h-4 mb-0.5" />
+                              <span>Cambiar</span>
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <ImageIcon className="w-5 h-5 mb-1" />
+                            <span className="text-[10px] font-medium text-center px-1">Sube una foto</span>
+                          </>
+                        )}
                       </div>
                       <div className="flex-1 space-y-2">
                         <div className="flex items-center gap-2">
@@ -1185,41 +1202,76 @@ export const MemorialWizard: React.FC = () => {
                     </div>
                   )}
 
-                  {/* Plan Choice for this memorial */}
+                  {/* Current Plan Summary (read-only — plan changes go through real checkout) */}
                   <div className="pt-4 border-t border-[#F4EFEA] space-y-3">
                     <label className="block text-xs font-semibold text-[#24201D] uppercase tracking-wider">
-                      Plan seleccionado
+                      Tu plan {userUsage.isPaid ? "actual" : "(pago pendiente)"}
                     </label>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      {DEFAULT_PLANS.map((plan) => {
-                        const isSelected = formData.planId === plan.id;
-                        return (
-                          <div
-                            key={plan.id}
-                            onClick={() => setFormData({ ...formData, planId: plan.id })}
-                            className={`p-4 rounded-2xl border cursor-pointer transition-all ${
-                              isSelected
-                                ? "bg-[#24201D] text-white border-[#24201D]"
-                                : "bg-[#FAF7F2] text-[#24201D] border-[#EAE3D9]"
-                            }`}
-                          >
-                            <div className="flex items-center justify-between mb-1">
-                              <span className="font-serif font-bold text-sm">{plan.name}</span>
-                              <span className="text-xs font-semibold text-[#C5A880]">
-                                {plan.price === 0 ? "Gratis" : `$${plan.price}`}
-                              </span>
-                            </div>
-                            <p
-                              className={`text-[10px] line-clamp-2 ${
-                                isSelected ? "text-stone-300" : "text-[#7A7067]"
-                              }`}
-                            >
-                              {plan.tagline}
-                            </p>
-                          </div>
-                        );
-                      })}
+                    <div className="p-5 rounded-2xl bg-[#24201D] text-white border border-[#24201D]">
+                      <div className="flex items-start justify-between gap-3 flex-wrap">
+                        <div>
+                          <span className="font-serif font-bold text-lg block">{userUsage.plan.name}</span>
+                          <p className="text-xs text-stone-300 mt-0.5 max-w-md">{userUsage.plan.tagline}</p>
+                          {!userUsage.isPaid && (
+                            <span className="inline-block mt-2 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-400 text-amber-950">
+                              Pago pendiente
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <span className="text-xl font-serif font-bold block">
+                            ${userUsage.plan.priceAnnualCLP.toLocaleString("es-CL")}{" "}
+                            <span className="text-[11px] font-sans uppercase text-stone-300">CLP/año</span>
+                          </span>
+                          <span className="text-[11px] text-[#C5A880] font-medium">{userUsage.plan.renewalText}</span>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 pt-4 border-t border-white/10 grid grid-cols-3 gap-3 text-center text-xs">
+                        <div>
+                          <span className="block font-semibold">{userUsage.memorasUsed}/{userUsage.memorasMax}</span>
+                          <span className="text-[10px] text-stone-300">MEMORAs usadas</span>
+                        </div>
+                        <div>
+                          <span className="block font-semibold">{userUsage.photosUsed}/{userUsage.photosMax}</span>
+                          <span className="text-[10px] text-stone-300">Fotos usadas</span>
+                        </div>
+                        <div>
+                          <span className="block font-semibold">{userUsage.videosUsed}/{userUsage.videosMax}</span>
+                          <span className="text-[10px] text-stone-300">Videos usados</span>
+                        </div>
+                      </div>
+
+                      <ul className="mt-4 pt-4 border-t border-white/10 space-y-1.5 text-[11px] text-stone-200">
+                        {userUsage.plan.features.slice(0, 6).map((feat, i) => (
+                          <li key={i} className="flex items-start gap-2">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-[#C5A880] flex-shrink-0 mt-0.5" />
+                            <span>{feat}</span>
+                          </li>
+                        ))}
+                      </ul>
+
+                      {(!userUsage.isPaid || userUsage.plan.id !== "legado") && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!userUsage.isPaid) {
+                              goToPlanSelection();
+                            } else {
+                              setSelectedPlanForCheckout(userUsage.plan.id === "familia" ? "legado" : "familia");
+                            }
+                          }}
+                          className="mt-4 w-full py-2.5 rounded-full bg-[#C5A880] text-[#1F1B18] hover:bg-[#D4BC97] text-xs font-semibold transition-colors cursor-pointer"
+                        >
+                          {!userUsage.isPaid ? "Elegir mi plan" : "Mejorar mi plan"}
+                        </button>
+                      )}
                     </div>
+                    <p className="text-[11px] text-[#8C827A]">
+                      {userUsage.isPaid
+                        ? "Esta MEMORA se creará bajo tu plan actual. Si necesitas más capacidad, mejora tu plan antes de publicar — el cambio de plan se procesa de forma segura a través de Flow."
+                        : "Necesitas activar tu plan (pagar vía Flow) antes de poder publicar esta MEMORA."}
+                    </p>
                   </div>
                 </div>
               )}
@@ -1245,12 +1297,16 @@ export const MemorialWizard: React.FC = () => {
                         className="w-full h-full object-cover"
                       />
                       <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent"></div>
-                      <div className="absolute -bottom-8 left-6 w-20 h-20 rounded-2xl overflow-hidden border-2 border-white shadow-md bg-white">
-                        <img
-                          src={formData.mainPhoto}
-                          alt={formData.personName}
-                          className="w-full h-full object-cover"
-                        />
+                      <div className="absolute -bottom-8 left-6 w-20 h-20 rounded-2xl overflow-hidden border-2 border-white shadow-md bg-[#FAF7F2] flex items-center justify-center text-[#8C827A]">
+                        {formData.mainPhoto ? (
+                          <img
+                            src={formData.mainPhoto}
+                            alt={formData.personName}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <ImageIcon className="w-6 h-6" />
+                        )}
                       </div>
                     </div>
 
@@ -1290,14 +1346,8 @@ export const MemorialWizard: React.FC = () => {
                           Privacidad: <strong>{formData.privacy}</strong>
                         </span>
                         <span>
-                          Plan:{" "}
-                          <strong>
-                            {formData.planId === "para_siempre"
-                              ? "Para Siempre"
-                              : formData.planId === "acompanado"
-                              ? "Acompañado"
-                              : "Esencial"}
-                          </strong>
+                          Plan: <strong>{userUsage.plan.name}</strong>
+                          {!userUsage.isPaid && <span className="text-amber-700 font-semibold"> (pago pendiente)</span>}
                         </span>
                         <span className="text-[#7A4E38] font-medium flex items-center gap-1">
                           <QrCode className="w-3.5 h-3.5 text-[#C5A880]" />
@@ -1331,7 +1381,7 @@ export const MemorialWizard: React.FC = () => {
                     <span>Continuar</span>
                     <ArrowRight className="w-4 h-4 text-[#C5A880]" />
                   </button>
-                ) : (
+                ) : userUsage.canCreateMemora ? (
                   <button
                     type="button"
                     disabled={isSubmitting}
@@ -1350,6 +1400,22 @@ export const MemorialWizard: React.FC = () => {
                         <span>Publicar mi Memorial MEMORA</span>
                       </>
                     )}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!userUsage.isPaid) {
+                        goToPlanSelection();
+                      } else {
+                        setSelectedPlanForCheckout(userUsage.plan.id === "familia" ? "legado" : "familia");
+                      }
+                    }}
+                    className="inline-flex items-center gap-2 px-8 py-3 rounded-full bg-amber-800 hover:bg-amber-900 text-white text-xs sm:text-sm font-bold transition-all shadow-md active:scale-[0.98] cursor-pointer"
+                    id="wizard-pay-to-publish-btn"
+                  >
+                    <Lock className="w-4 h-4 text-[#C5A880]" />
+                    <span>{!userUsage.isPaid ? "Elegir plan para publicar" : "Mejorar plan para publicar"}</span>
                   </button>
                 )}
               </div>

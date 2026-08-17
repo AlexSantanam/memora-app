@@ -142,7 +142,14 @@ export const Navbar: React.FC = () => {
                     <p className="text-xs font-semibold text-[#24201D] truncate">{currentUser.name}</p>
                     <p className="text-[11px] text-[#8C827A] truncate">{currentUser.email}</p>
                     <span className="inline-block mt-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-[#FAF7F2] text-[#7A4E38] border border-[#EAE3D9]">
-                      Plan {currentUser.currentPlan === "para_siempre" ? "Para Siempre" : currentUser.currentPlan === "acompanado" ? "Acompañado" : "Esencial"}
+                      Plan{" "}
+                      {currentUser.currentPlan === "para_siempre" || currentUser.currentPlan === "familia"
+                        ? "Familia"
+                        : currentUser.currentPlan === "acompanado" || currentUser.currentPlan === "legado"
+                        ? "Legado"
+                        : "Esencial"}
+                      {currentUser.subscription?.status === "free_trial" ? " (Prueba)" : ""}
+                      {currentUser.subscription?.status === "pending_payment" ? " (Pago pendiente)" : ""}
                     </span>
                   </div>
 

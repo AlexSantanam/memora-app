@@ -43,6 +43,7 @@ export const UserDashboard: React.FC = () => {
     setActiveQRMemorial,
     setActivePrintableMemorial,
     setSelectedPlanForCheckout,
+    goToPlanSelection,
     transactions,
     notify,
     updateUserProfile,
@@ -159,13 +160,22 @@ export const UserDashboard: React.FC = () => {
             <button
               onClick={() => {
                 if (!userUsage.canCreateMemora) {
-                  notify(
-                    "warning",
-                    "Límite de MEMORAs alcanzado",
-                    `Tu plan ${userUsage.plan.name} permite hasta ${userUsage.memorasMax} MEMORAs. Mejora tu plan para crear más.`
-                  );
-                  setSelectedPlanForCheckout(userUsage.plan.id === "esencial" ? "familia" : "legado");
-                  setCurrentView("pricing");
+                  if (!userUsage.isPaid) {
+                    notify(
+                      "warning",
+                      "Elige un plan para crear tu MEMORA",
+                      "Aún no tienes un plan activo. Elige el que mejor se ajuste a tu familia."
+                    );
+                    goToPlanSelection();
+                  } else {
+                    notify(
+                      "warning",
+                      "Límite de MEMORAs alcanzado",
+                      `Tu plan ${userUsage.plan.name} permite hasta ${userUsage.memorasMax} MEMORAs. Mejora tu plan para crear más.`
+                    );
+                    setSelectedPlanForCheckout(userUsage.plan.id === "esencial" ? "familia" : "legado");
+                    setCurrentView("pricing");
+                  }
                   return;
                 }
                 setCurrentView("wizard");
@@ -201,25 +211,35 @@ export const UserDashboard: React.FC = () => {
                     🌱 Primer año GRATIS (365 días)
                   </span>
                 )}
+                {!userUsage.isPaid && (
+                  <span className="px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-900 text-[11px] font-semibold border border-amber-200">
+                    ⏳ Pago pendiente
+                  </span>
+                )}
               </div>
               <p className="text-xs text-[#5C534B]">
-                {userUsage.plan.id === "esencial"
+                {!userUsage.isPaid
+                  ? `Completa el pago de $${userUsage.plan.priceAnnualCLP.toLocaleString("es-CL")} CLP para activar tu plan ${userUsage.plan.name} y crear tu primera MEMORA.`
+                  : userUsage.plan.id === "esencial"
                   ? "Plan Esencial: $990 CLP / año. 1 MEMORA y 10 fotos totales. Renovación: $990 CLP."
                   : `$${userUsage.plan.priceAnnualCLP.toLocaleString("es-CL")} CLP / año. Almacenamiento y cuotas compartidas por plan.`}
               </p>
             </div>
 
             <div className="flex items-center gap-3">
-              {userUsage.plan.id !== "legado" && (
+              {(!userUsage.isPaid || userUsage.plan.id !== "legado") && (
                 <button
                   onClick={() => {
-                    setSelectedPlanForCheckout(userUsage.plan.id === "esencial" ? "familia" : "legado");
-                    setCurrentView("pricing");
+                    if (!userUsage.isPaid) {
+                      goToPlanSelection();
+                    } else {
+                      setSelectedPlanForCheckout(userUsage.plan.id === "esencial" ? "familia" : "legado");
+                    }
                   }}
                   className="px-5 py-2.5 rounded-full bg-[#7A4E38] hover:bg-[#623D2C] text-white text-xs font-semibold flex items-center gap-2 transition-all shadow-xs cursor-pointer"
                 >
                   <Sparkles className="w-3.5 h-3.5 text-[#C5A880]" />
-                  <span>Mejorar Plan</span>
+                  <span>{!userUsage.isPaid ? "Elegir Plan" : "Mejorar Plan"}</span>
                 </button>
               )}
             </div>
@@ -241,15 +261,23 @@ export const UserDashboard: React.FC = () => {
               <div className="w-full bg-[#EAE3D9] h-2 rounded-full overflow-hidden">
                 <div
                   className={`h-full transition-all ${
-                    userUsage.memorasUsed >= userUsage.memorasMax ? "bg-amber-600" : "bg-[#7A4E38]"
+                    userUsage.memorasMax === 0
+                      ? "bg-stone-300"
+                      : userUsage.memorasUsed >= userUsage.memorasMax
+                      ? "bg-amber-600"
+                      : "bg-[#7A4E38]"
                   }`}
                   style={{
-                    width: `${Math.min(100, (userUsage.memorasUsed / userUsage.memorasMax) * 100)}%`,
+                    width: `${
+                      userUsage.memorasMax === 0 ? 0 : Math.min(100, (userUsage.memorasUsed / userUsage.memorasMax) * 100)
+                    }%`,
                   }}
                 />
               </div>
               <p className="text-[11px] text-[#8C827A]">
-                {userUsage.canCreateMemora
+                {!userUsage.isPaid
+                  ? "Activa tu plan para habilitar espacios"
+                  : userUsage.canCreateMemora
                   ? `${userUsage.memorasRemaining} espacio(s) disponible(s)`
                   : "Límite del plan alcanzado"}
               </p>
@@ -269,15 +297,23 @@ export const UserDashboard: React.FC = () => {
               <div className="w-full bg-[#EAE3D9] h-2 rounded-full overflow-hidden">
                 <div
                   className={`h-full transition-all ${
-                    userUsage.photosUsed >= userUsage.photosMax ? "bg-amber-600" : "bg-[#7A4E38]"
+                    userUsage.photosMax === 0
+                      ? "bg-stone-300"
+                      : userUsage.photosUsed >= userUsage.photosMax
+                      ? "bg-amber-600"
+                      : "bg-[#7A4E38]"
                   }`}
                   style={{
-                    width: `${Math.min(100, (userUsage.photosUsed / userUsage.photosMax) * 100)}%`,
+                    width: `${
+                      userUsage.photosMax === 0 ? 0 : Math.min(100, (userUsage.photosUsed / userUsage.photosMax) * 100)
+                    }%`,
                   }}
                 />
               </div>
               <p className="text-[11px] text-[#8C827A]">
-                {userUsage.photosRemaining > 0
+                {!userUsage.isPaid
+                  ? "Activa tu plan para habilitar tu bolsa de fotos"
+                  : userUsage.photosRemaining > 0
                   ? `${userUsage.photosRemaining} foto(s) disponibles para distribuir`
                   : "Bolsa de fotos completa"}
               </p>

@@ -153,8 +153,8 @@ export const PricingSection: React.FC = () => {
                     </p>
                     <div className={`space-y-0.5 text-[11px] ${isPopular ? "text-stone-300" : "text-[#5C534B]"}`}>
                       <p>• {plan.maxMemoras === 1 ? "1 MEMORA" : `Hasta ${plan.maxMemoras} MEMORAs`}</p>
-                      <p>• {plan.maxPhotosTotal.toLocaleString("es-CL")} fotografías (bolsa compartida)</p>
-                      <p>• {plan.maxVideosTotal === 0 ? "0 videos (exclusivo fotos)" : `${plan.maxVideosTotal} videos (bolsa compartida)`}</p>
+                      <p>• Hasta {plan.maxPhotosTotal.toLocaleString("es-CL")} fotografías</p>
+                      <p>• {plan.maxVideosTotal === 0 ? "Sin videos (solo fotos)" : `Hasta ${plan.maxVideosTotal} videos`}</p>
                     </div>
                   </div>
 
@@ -230,7 +230,7 @@ export const PricingSection: React.FC = () => {
               Compara las características de cada plan
             </h3>
             <p className="text-xs sm:text-sm text-[#8C827A] mt-1">
-              Los límites de fotografías y videos son por plan (bolsa total compartida entre tus MEMORAs), no por MEMORA.
+              Los límites de fotografías y videos se comparten entre todas tus MEMORAs dentro de un mismo plan.
             </p>
           </div>
 
@@ -246,7 +246,7 @@ export const PricingSection: React.FC = () => {
                   <th className="py-4 px-3 text-center w-1/5 font-semibold bg-[#FAF7F2] rounded-t-2xl">
                     <div className="inline-flex items-center gap-1 text-[10px] uppercase font-bold text-[#7A4E38] bg-[#F4EFEA] px-2 py-0.5 rounded-full mb-1">
                       <Sparkles className="w-2.5 h-2.5 text-[#C5A880]" />
-                      Recomendado
+                      Más elegido
                     </div>
                     <span className="block text-sm sm:text-base font-serif">MEMORA Familia</span>
                     <span className="text-xs text-[#7A4E38] font-bold block">$4.900 CLP / año</span>
@@ -277,16 +277,16 @@ export const PricingSection: React.FC = () => {
                   <td className="py-3.5 pl-3 text-center font-semibold text-[#24201D]">Hasta 10</td>
                 </tr>
                 <tr>
-                  <td className="py-3.5 pr-4 font-medium text-[#24201D]">Fotografías (bolsa compartida por plan)</td>
-                  <td className="py-3.5 px-3 text-center font-semibold text-[#24201D]">10 fotos</td>
-                  <td className="py-3.5 px-3 text-center font-semibold text-[#24201D] bg-[#FAF7F2]">100 fotos</td>
-                  <td className="py-3.5 pl-3 text-center font-semibold text-[#24201D]">1.000 fotos</td>
+                  <td className="py-3.5 pr-4 font-medium text-[#24201D]">Fotografías incluidas</td>
+                  <td className="py-3.5 px-3 text-center font-semibold text-[#24201D]">Hasta 10</td>
+                  <td className="py-3.5 px-3 text-center font-semibold text-[#24201D] bg-[#FAF7F2]">Hasta 100</td>
+                  <td className="py-3.5 pl-3 text-center font-semibold text-[#24201D]">Hasta 1.000</td>
                 </tr>
                 <tr>
-                  <td className="py-3.5 pr-4 font-medium text-[#24201D]">Videos (bolsa compartida por plan)</td>
+                  <td className="py-3.5 pr-4 font-medium text-[#24201D]">Videos incluidos</td>
                   <td className="py-3.5 px-3 text-center text-[#8C827A]">—</td>
-                  <td className="py-3.5 px-3 text-center font-semibold text-[#24201D] bg-[#FAF7F2]">10 videos</td>
-                  <td className="py-3.5 pl-3 text-center font-semibold text-[#24201D]">50 videos</td>
+                  <td className="py-3.5 px-3 text-center font-semibold text-[#24201D] bg-[#FAF7F2]">Hasta 10</td>
+                  <td className="py-3.5 pl-3 text-center font-semibold text-[#24201D]">Hasta 50</td>
                 </tr>
                 <tr>
                   <td className="py-3.5 pr-4 font-medium text-[#24201D]">Personas y Mascotas</td>
