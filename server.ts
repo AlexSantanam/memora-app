@@ -139,7 +139,9 @@ const ai = new GoogleGenAI({
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  // Hosting platforms (Railway, Render, etc.) assign the port dynamically via
+  // process.env.PORT — 3000 is only a fallback for local development.
+  const PORT = Number(process.env.PORT) || 3000;
 
   app.use(express.json({ limit: "25mb" }));
   app.use(express.urlencoded({ extended: true, limit: "25mb" }));
