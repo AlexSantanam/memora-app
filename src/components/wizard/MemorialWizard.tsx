@@ -50,6 +50,9 @@ export const MemorialWizard: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
 
+  // Admin accounts get Infinity as their quota — show "∞" instead of the literal word.
+  const fmtQuota = (n: number) => (n === Infinity ? "∞" : n.toLocaleString("es-CL"));
+
   // File Input Refs for direct local image uploads
   const mainPhotoInputRef = useRef<HTMLInputElement>(null);
   const coverPhotoInputRef = useRef<HTMLInputElement>(null);
@@ -1229,15 +1232,15 @@ export const MemorialWizard: React.FC = () => {
 
                       <div className="mt-4 pt-4 border-t border-white/10 grid grid-cols-3 gap-3 text-center text-xs">
                         <div>
-                          <span className="block font-semibold">{userUsage.memorasUsed}/{userUsage.memorasMax}</span>
+                          <span className="block font-semibold">{userUsage.memorasUsed}/{fmtQuota(userUsage.memorasMax)}</span>
                           <span className="text-[10px] text-stone-300">MEMORAs usadas</span>
                         </div>
                         <div>
-                          <span className="block font-semibold">{userUsage.photosUsed}/{userUsage.photosMax}</span>
+                          <span className="block font-semibold">{userUsage.photosUsed}/{fmtQuota(userUsage.photosMax)}</span>
                           <span className="text-[10px] text-stone-300">Fotos usadas</span>
                         </div>
                         <div>
-                          <span className="block font-semibold">{userUsage.videosUsed}/{userUsage.videosMax}</span>
+                          <span className="block font-semibold">{userUsage.videosUsed}/{fmtQuota(userUsage.videosMax)}</span>
                           <span className="text-[10px] text-stone-300">Videos usados</span>
                         </div>
                       </div>

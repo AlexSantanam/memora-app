@@ -76,6 +76,9 @@ interface AppContextType {
   openMemorialBySlug: (slug: string) => void;
   openMemorialById: (id: string) => void;
   openMemorialEdit: (id: string, tab?: "general" | "story" | "media" | "timeline" | "collaborators" | "tributes" | "privacy" | "qr") => void;
+  dashboardTab: "memorials" | "billing" | "security";
+  setDashboardTab: (tab: "memorials" | "billing" | "security") => void;
+  openMyProfile: () => void;
 
   // Authentication & Subscription
   currentUser: User | null;
@@ -183,6 +186,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [selectedMemorialSlug, setSelectedMemorialSlug] = useState<string | null>(null);
   const [selectedMemorialId, setSelectedMemorialId] = useState<string | null>(null);
   const [activeEditTab, setActiveEditTab] = useState<"general" | "story" | "media" | "timeline" | "collaborators" | "tributes" | "privacy" | "qr">("general");
+  const [dashboardTab, setDashboardTab] = useState<"memorials" | "billing" | "security">("memorials");
+
+  // Jumps straight to the "Mi Perfil" tab in the dashboard — used by the
+  // navbar shortcut so editing your name/photo doesn't require hunting for it.
+  const openMyProfile = () => {
+    setDashboardTab("security");
+    setCurrentView("dashboard");
+  };
 
   // Registered Accounts Database
   const [registeredAccounts, setRegisteredAccounts] = useState<RegisteredAccount[]>(() => {
@@ -1402,6 +1413,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         selectedMemorialId,
         activeEditTab,
         setActiveEditTab,
+        dashboardTab,
+        setDashboardTab,
+        openMyProfile,
         openMemorialBySlug,
         openMemorialById,
         openMemorialEdit,

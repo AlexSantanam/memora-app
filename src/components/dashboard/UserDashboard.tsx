@@ -48,9 +48,10 @@ export const UserDashboard: React.FC = () => {
     notify,
     updateUserProfile,
     changePassword,
+    dashboardTab: activeTab,
+    setDashboardTab: setActiveTab,
   } = useApp();
 
-  const [activeTab, setActiveTab] = useState<"memorials" | "billing" | "security">("memorials");
   const [typeFilter, setTypeFilter] = useState<"all" | "person" | "pet">("all");
 
   const avatarFileInputRef = useRef<HTMLInputElement>(null);
@@ -67,6 +68,9 @@ export const UserDashboard: React.FC = () => {
   const [isChangingPass, setIsChangingPass] = useState(false);
   const [passError, setPassError] = useState<string | null>(null);
   const [passSuccess, setPassSuccess] = useState<string | null>(null);
+
+  // Admin accounts get Infinity as their quota — show "∞" instead of the literal word.
+  const fmtQuota = (n: number) => (n === Infinity ? "∞" : n.toLocaleString("es-CL"));
 
   const myMemorials = memorials.filter(
     (m) =>
@@ -255,7 +259,7 @@ export const UserDashboard: React.FC = () => {
                   MEMORAs (Espacios)
                 </span>
                 <span className="font-mono font-bold text-[#7A4E38]">
-                  {userUsage.memorasUsed} / {userUsage.memorasMax}
+                  {userUsage.memorasUsed} / {fmtQuota(userUsage.memorasMax)}
                 </span>
               </div>
               <div className="w-full bg-[#EAE3D9] h-2 rounded-full overflow-hidden">
@@ -278,7 +282,7 @@ export const UserDashboard: React.FC = () => {
                 {!userUsage.isPaid
                   ? "Activa tu plan para habilitar espacios"
                   : userUsage.canCreateMemora
-                  ? `${userUsage.memorasRemaining} espacio(s) disponible(s)`
+                  ? `${fmtQuota(userUsage.memorasRemaining)} espacio(s) disponible(s)`
                   : "Límite del plan alcanzado"}
               </p>
             </div>
@@ -291,7 +295,7 @@ export const UserDashboard: React.FC = () => {
                   Bolsa Global de Fotos
                 </span>
                 <span className="font-mono font-bold text-[#7A4E38]">
-                  {userUsage.photosUsed} / {userUsage.photosMax}
+                  {userUsage.photosUsed} / {fmtQuota(userUsage.photosMax)}
                 </span>
               </div>
               <div className="w-full bg-[#EAE3D9] h-2 rounded-full overflow-hidden">
@@ -314,7 +318,7 @@ export const UserDashboard: React.FC = () => {
                 {!userUsage.isPaid
                   ? "Activa tu plan para habilitar tu bolsa de fotos"
                   : userUsage.photosRemaining > 0
-                  ? `${userUsage.photosRemaining} foto(s) disponibles para distribuir`
+                  ? `${fmtQuota(userUsage.photosRemaining)} foto(s) disponibles para distribuir`
                   : "Bolsa de fotos completa"}
               </p>
             </div>
@@ -327,7 +331,7 @@ export const UserDashboard: React.FC = () => {
                   Bolsa Global de Videos
                 </span>
                 <span className="font-mono font-bold text-[#7A4E38]">
-                  {userUsage.videosUsed} / {userUsage.videosMax}
+                  {userUsage.videosUsed} / {fmtQuota(userUsage.videosMax)}
                 </span>
               </div>
               <div className="w-full bg-[#EAE3D9] h-2 rounded-full overflow-hidden">
@@ -349,7 +353,7 @@ export const UserDashboard: React.FC = () => {
                   {userUsage.videosMax === 0
                     ? "Videos disponibles desde Plan Familia"
                     : userUsage.videosRemaining > 0
-                    ? `${userUsage.videosRemaining} video(s) disponibles`
+                    ? `${fmtQuota(userUsage.videosRemaining)} video(s) disponibles`
                     : "Bolsa de videos completa"}
                 </span>
                 {userUsage.videosMax === 0 && (
@@ -398,7 +402,7 @@ export const UserDashboard: React.FC = () => {
                 : "bg-white text-[#5C534B] border border-[#D8CEBE] hover:border-[#C5A880]"
             }`}
           >
-            Privacidad & Cuenta
+            Mi Perfil & Cuenta
           </button>
         </div>
 

@@ -24,6 +24,7 @@ export const Navbar: React.FC = () => {
     setAuthModalMode,
     logout,
     openMemorialBySlug,
+    openMyProfile,
   } = useApp();
 
   const [isScrolled, setIsScrolled] = useState(false);
@@ -162,6 +163,14 @@ export const Navbar: React.FC = () => {
                   </button>
 
                   <button
+                    onClick={openMyProfile}
+                    className="w-full px-4 py-2 text-left text-xs text-[#2C2723] hover:bg-[#FAF7F2] flex items-center gap-2.5 transition-colors"
+                  >
+                    <UserIcon className="w-4 h-4 text-[#8C827A]" />
+                    Mi Perfil
+                  </button>
+
+                  <button
                     onClick={() => setCurrentView("wizard")}
                     className="w-full px-4 py-2 text-left text-xs text-[#2C2723] hover:bg-[#FAF7F2] flex items-center gap-2.5 transition-colors"
                   >
@@ -297,6 +306,16 @@ export const Navbar: React.FC = () => {
               >
                 <LayoutDashboard className="w-4 h-4 text-[#8C827A]" />
                 Mi MEMORA (Dashboard)
+              </button>
+              <button
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  openMyProfile();
+                }}
+                className="w-full py-2.5 text-left text-sm font-medium text-[#24201D] flex items-center gap-2"
+              >
+                <UserIcon className="w-4 h-4 text-[#8C827A]" />
+                Mi Perfil
               </button>
               <button
                 onClick={() => {
