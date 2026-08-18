@@ -432,7 +432,7 @@ Genera 3 opciones de mensajes diferentes en formato JSON:
   // Create Flow Payment Order
   app.post("/api/payments/flow/create-order", async (req, res) => {
     try {
-      const { planId, memorialId, userEmail, userName, isFreeTrialClaim } = req.body;
+      const { planId, memorialId, userEmail, userName } = req.body;
 
       // New Commercial Plans Pricing (CLP)
       const planPricesCLP: Record<string, number> = {
@@ -453,18 +453,11 @@ Genera 3 opciones de mensajes diferentes en formato JSON:
       };
 
       const normalizedPlan = planId === "para_siempre" ? "familia" : planId === "acompanado" ? "legado" : (planId || "familia");
-      const amount = isFreeTrialClaim && normalizedPlan === "esencial" ? 0 : (planPricesCLP[normalizedPlan] ?? 4900);
-      const planName = planTitles[normalizedPlan] ?? "MEMORA Familia";
-
-      // If free trial claim, activate immediately
-      if (amount === 0) {
-        return res.json({
-          success: true,
-          free: true,
-          planId: "esencial",
-          message: "Plan MEMORA Esencial activado con primer año gratis (365 días).",
-        });
+      if (!planPricesCLP[normalizedPlan]) {
+        return res.status(400).json({ success: false, error: `Plan desconocido: ${planId}` });
       }
+      const amount = planPricesCLP[normalizedPlan];
+      const planName = planTitles[normalizedPlan] ?? "MEMORA Familia";
 
       const host = req.get("host") || "localhost:3000";
       const protocol = req.protocol === "https" || req.headers["x-forwarded-proto"] === "https" ? "https" : "http";

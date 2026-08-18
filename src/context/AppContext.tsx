@@ -367,77 +367,107 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       const isPaymentSuccess = urlParams.get("payment_success");
       const paymentStatus = urlParams.get("payment_status");
-      const planParam = urlParams.get("plan") || "familia";
-      const memorialId = urlParams.get("memorial");
-      const flowOrder = urlParams.get("flow_order");
-      const amountParam = urlParams.get("amount");
-      const commerceOrder = urlParams.get("commerce_order");
+      const flowToken = urlParams.get("flow_token");
 
-      if (isPaymentSuccess === "true") {
-        const normalizedPlan = normalizePlanId(planParam);
-        const planConfig = getPlanConfig(normalizedPlan);
-
-        const newTx: PaymentTransaction = {
-          id: `tx-flow-${flowOrder || Date.now()}`,
-          userId: currentUser?.id || "user-demo-1",
-          memorialId: memorialId || undefined,
-          memorialName: memorialId ? memorials.find((m) => m.id === memorialId)?.personName : undefined,
-          planId: normalizedPlan,
-          amount: amountParam ? Number(amountParam) : planConfig.priceMonthlyCLP,
-          currency: "CLP",
-          status: "completed",
-          provider: "flow_webpay",
-          invoiceNumber: `FLOW-${flowOrder || Math.floor(100000 + Math.random() * 900000)}`,
-          createdAt: new Date().toISOString(),
-        };
-
-        setTransactions((prev) => [newTx, ...prev.filter((t) => t.id !== newTx.id)]);
-
-        const newSub: UserSubscription = {
-          planId: normalizedPlan,
-          status: "active",
-          startDate: new Date().toISOString(),
-          nextRenewalDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
-          priceCLP: planConfig.priceMonthlyCLP,
-        };
-
-        if (currentUser) {
-          const updatedUser: User = {
-            ...currentUser,
-            currentPlan: normalizedPlan,
-            subscription: newSub,
-          };
-          setCurrentUser(updatedUser);
-          setRegisteredAccounts((prev) =>
-            prev.map((a) =>
-              a.id === currentUser.id ? { ...a, currentPlan: normalizedPlan, subscription: newSub } : a
-            )
-          );
-        }
-
-        if (memorialId) {
-          setMemorials((prev) =>
-            prev.map((m) => (m.id === memorialId ? { ...m, planId: normalizedPlan } : m))
-          );
-        }
-
-        // Trigger celebratory confetti
-        confetti({
-          particleCount: 100,
-          spread: 70,
-          origin: { y: 0.6 },
-          colors: ["#C5A880", "#7A4E38", "#24201D", "#10B981"],
-        });
-
-        notify(
-          "success",
-          "¡Suscripción aprobada en Flow!",
-          `Tu plan ${planConfig.name} ha sido activado exitosamente (Orden Flow #${flowOrder || commerceOrder || "OK"}).`
-        );
-
-        // Clean query parameters from URL
+      if (isPaymentSuccess === "true" && flowToken) {
+        // Never trust plan/amount straight from the URL — verify the token against
+        // Flow's own API server-side before granting anything. A crafted URL like
+        // ?payment_success=true&plan=legado must not be enough to activate a plan.
         const cleanUrl = window.location.pathname;
-        window.history.replaceState({}, document.title, cleanUrl);
+        (async () => {
+          try {
+            const res = await fetch(`/api/payments/flow/status/${encodeURIComponent(flowToken)}`);
+            const json = await res.json();
+            const statusData = json?.data;
+
+            if (!json?.success || statusData?.status !== 2) {
+              notify(
+                "warning",
+                "No pudimos verificar tu pago",
+                "Si realizaste un pago y ves este mensaje, contáctanos por WhatsApp con tu número de orden."
+              );
+              return;
+            }
+
+            let optionalData: any = {};
+            try {
+              optionalData = statusData.optional
+                ? typeof statusData.optional === "string"
+                  ? JSON.parse(statusData.optional)
+                  : statusData.optional
+                : {};
+            } catch {
+              optionalData = {};
+            }
+
+            const normalizedPlan = normalizePlanId(optionalData.planId);
+            const planConfig = getPlanConfig(normalizedPlan);
+            const memorialId: string | undefined = optionalData.memorialId || undefined;
+            const verifiedAmount = Number(statusData.amount) || planConfig.priceMonthlyCLP;
+
+            const newTx: PaymentTransaction = {
+              id: `tx-flow-${statusData.flowOrder || Date.now()}`,
+              userId: currentUser?.id || "user-demo-1",
+              memorialId,
+              memorialName: memorialId ? memorials.find((m) => m.id === memorialId)?.personName : undefined,
+              planId: normalizedPlan,
+              amount: verifiedAmount,
+              currency: "CLP",
+              status: "completed",
+              provider: "flow_webpay",
+              invoiceNumber: `FLOW-${statusData.flowOrder || statusData.commerceOrder || Date.now()}`,
+              createdAt: new Date().toISOString(),
+            };
+
+            setTransactions((prev) => [newTx, ...prev.filter((t) => t.id !== newTx.id)]);
+
+            const newSub: UserSubscription = {
+              planId: normalizedPlan,
+              status: "active",
+              startDate: new Date().toISOString(),
+              nextRenewalDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+              priceCLP: planConfig.priceMonthlyCLP,
+            };
+
+            if (currentUser) {
+              const updatedUser: User = {
+                ...currentUser,
+                currentPlan: normalizedPlan,
+                subscription: newSub,
+              };
+              setCurrentUser(updatedUser);
+              setRegisteredAccounts((prev) =>
+                prev.map((a) =>
+                  a.id === currentUser.id ? { ...a, currentPlan: normalizedPlan, subscription: newSub } : a
+                )
+              );
+            }
+
+            if (memorialId) {
+              setMemorials((prev) =>
+                prev.map((m) => (m.id === memorialId ? { ...m, planId: normalizedPlan } : m))
+              );
+            }
+
+            confetti({
+              particleCount: 100,
+              spread: 70,
+              origin: { y: 0.6 },
+              colors: ["#C5A880", "#7A4E38", "#24201D", "#10B981"],
+            });
+
+            notify(
+              "success",
+              "¡Suscripción aprobada en Flow!",
+              `Tu plan ${planConfig.name} ha sido activado exitosamente (Orden Flow #${statusData.flowOrder || statusData.commerceOrder || "OK"}).`
+            );
+          } catch (e) {
+            console.error("Error verifying Flow payment:", e);
+            notify("error", "Error verificando el pago", "Intenta nuevamente o contáctanos por WhatsApp.");
+          } finally {
+            window.history.replaceState({}, document.title, cleanUrl);
+          }
+        })();
       } else if (isPaymentSuccess === "false" || paymentStatus === "cancelled" || paymentStatus === "error") {
         notify("warning", "Pago no completado", "La transacción en Flow fue cancelada o rechazada. Puedes intentar nuevamente.");
         const cleanUrl = window.location.pathname;
