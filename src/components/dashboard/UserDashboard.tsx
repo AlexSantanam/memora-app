@@ -16,6 +16,7 @@ import {
   Flame,
   Image as ImageIcon,
   Clock,
+  Calendar,
   Shield,
   CreditCard,
   User as UserIcon,
@@ -724,7 +725,42 @@ export const UserDashboard: React.FC = () => {
         {/* TAB 3: Security & Privacy Settings */}
         {activeTab === "security" && (
           <div className="space-y-6 animate-in fade-in duration-300 max-w-3xl">
-            
+
+            {/* Plan Renewal Reminder */}
+            {currentUser?.subscription?.nextRenewalDate && (() => {
+              const renewalDate = new Date(currentUser.subscription!.nextRenewalDate!);
+              const daysLeft = Math.ceil((renewalDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+              const isSoon = daysLeft <= 30 && daysLeft >= 0;
+              return (
+                <div
+                  className={`p-5 rounded-3xl border flex items-center gap-4 ${
+                    isSoon ? "bg-amber-50 border-amber-200" : "bg-white border-[#EAE3D9]"
+                  }`}
+                >
+                  <div
+                    className={`w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0 ${
+                      isSoon ? "bg-amber-100 text-amber-700" : "bg-[#FAF7F2] text-[#7A4E38] border border-[#EAE3D9]"
+                    }`}
+                  >
+                    <Calendar className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-[#24201D]">
+                      Tu plan {userUsage.plan.name} se renueva el{" "}
+                      {renewalDate.toLocaleDateString("es-CL", { day: "numeric", month: "long", year: "numeric" })}
+                    </p>
+                    <p className="text-[11px] text-[#8C827A] mt-0.5">
+                      {daysLeft < 0
+                        ? "La fecha de renovación ya pasó."
+                        : daysLeft === 0
+                        ? "¡Vence hoy!"
+                        : `Faltan ${daysLeft} día${daysLeft === 1 ? "" : "s"}. Renovación: $${userUsage.plan.priceAnnualCLP.toLocaleString("es-CL")} CLP.`}
+                    </p>
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* Account Status Card */}
             <div className="bg-white rounded-3xl p-6 sm:p-8 border border-[#EAE3D9] space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-[#EAE3D9]">
