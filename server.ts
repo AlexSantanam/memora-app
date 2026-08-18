@@ -4,6 +4,8 @@ import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import { Resend } from "resend";
+import { createClient } from "@supabase/supabase-js";
+import WebSocket from "ws";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -17,9 +19,23 @@ if (!RESEND_API_KEY) {
   console.warn("⚠️  RESEND_API_KEY not set in .env — payment receipt emails will not be sent.");
 }
 
-// In-memory dedupe for Flow webhook retries. Resets on server restart — fine for
-// this app's scale, but a real deployment should persist this in a database.
-const emailedFlowOrders = new Set<string>();
+// Supabase (service role — server-only, bypasses Row Level Security).
+// Never expose SUPABASE_SERVICE_ROLE_KEY to the client bundle (no VITE_ prefix).
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL || "";
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+const supabaseAdmin =
+  SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY
+    ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+        auth: { persistSession: false },
+        // Node 20 lacks a native WebSocket global; supply `ws` so the realtime
+        // client (initialized unconditionally by supabase-js) doesn't crash at startup.
+        realtime: { transport: WebSocket as any },
+      })
+    : null;
+
+if (!supabaseAdmin) {
+  console.warn("⚠️  SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY not set in .env — database features disabled.");
+}
 
 interface ReceiptEmailParams {
   userEmail: string;
@@ -147,7 +163,12 @@ async function startServer() {
   app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 
   // API Health Check
-  app.get("/api/health", (_req, res) => {
+  app.get("/api/health", async (_req, res) => {
+    let supabaseReachable: boolean | null = null;
+    if (supabaseAdmin) {
+      const { error } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1 });
+      supabaseReachable = !error;
+    }
     res.json({
       status: "ok",
       appName: "MEMORA",
@@ -155,6 +176,8 @@ async function startServer() {
       geminiConfigured: !!process.env.GEMINI_API_KEY,
       flowConfigured: !!FLOW_API_KEY && !!FLOW_SECRET_KEY,
       flowEnvironment: FLOW_ENV,
+      supabaseConfigured: !!supabaseAdmin,
+      supabaseReachable,
     });
   });
 
@@ -210,7 +233,7 @@ INFORMACIÓN PROPORCIONADA:
 REGLAS ESTRICTAS:
 1. Trata a la mascota como lo que representa: un compañero de vida noble y un miembro fundamental de la familia.
 2. NO uses diminutivos excesivos ni lenguaje infantilizado. Mantén la elegancia, calidez y carácter premium de MEMORA.
-3. Organiza la historia en párrafos naturales (su llegada y personalidad, momentos felices y costumbres entrañables, gratitud y recuerdo eterno).
+3. La biografía debe ser extensa y detallada: escribe entre 5 y 7 párrafos completos (mínimo 500-600 palabras en total). Desarrolla cada idea con profundidad y detalle sensorial — no resumas en una sola frase lo que puede convertirse en un párrafo evocador. Estructura sugerida: su llegada y primeras impresiones, su personalidad y costumbres del día a día, momentos y aventuras felices, su vínculo con cada miembro de la familia, y un cierre de gratitud y recuerdo eterno.
 4. Proporciona una cita conmemorativa hermosa (1-2 frases).
 5. Proporciona de 2 a 4 hitos sugeridos para su línea de tiempo (ej. Su llegada a casa, Aventuras compartidas, Los años dorados).
 
@@ -239,7 +262,7 @@ INFORMACIÓN PROPORCIONADA:
 REGLAS ESTRICTAS:
 1. NUNCA inventes fechas, nombres de familiares ni hechos históricos que no se mencionen.
 2. Mantén un tono de celebración de vida, gratitud, amor y paz. Evita dramatismos innecesarios.
-3. Organiza el texto en párrafos naturales (introducción, trayectoria y pasiones, legado humano y memoria eterna).
+3. La biografía debe ser extensa y detallada: escribe entre 5 y 7 párrafos completos (mínimo 500-600 palabras en total). Desarrolla cada idea con profundidad en vez de resumirla en una sola frase — expande cada nota o anécdota entregada en un párrafo evocador propio. Estructura sugerida: introducción y orígenes, trayectoria de vida y pasiones, vínculos familiares y de amistad, legado y forma de ser recordado(a), cierre de gratitud y memoria eterna.
 4. Proporciona además una cita conmemorativa corta (1-2 frases) que capture su esencia.
 5. Proporciona una lista de 3 a 5 momentos o hitos sugeridos para la línea de tiempo.
 
@@ -544,7 +567,11 @@ Genera 3 opciones de mensajes diferentes en formato JSON:
     }
   });
 
-  // Flow Server Confirmation Webhook
+  // Flow Server Confirmation Webhook — the ONLY writer of a confirmed plan.
+  // Uses the service role key (bypasses RLS) since this is the one place
+  // account_entitlements is allowed to be written from outside Postgres
+  // itself. The client (AppContext's Flow-return handler) never writes here
+  // anymore — it only polls and reflects what this webhook already wrote.
   app.post("/api/payments/flow/confirmation", async (req, res) => {
     try {
       const token = req.body.token || req.query.token;
@@ -584,12 +611,92 @@ Genera 3 opciones de mensajes diferentes en formato JSON:
           para_siempre: "MEMORA Familia",
           acompanado: "MEMORA Legado",
         };
+        const normalizePlan = (p: string): "esencial" | "familia" | "legado" => {
+          if (p === "para_siempre" || p === "familia") return "familia";
+          if (p === "acompanado" || p === "legado") return "legado";
+          return "esencial";
+        };
 
-        // Flow retries webhook delivery on timeout/non-2xx — guard against
-        // emailing the same confirmed order more than once.
         const orderKey = String(statusData.flowOrder || statusData.commerceOrder || "");
-        if (orderKey && !emailedFlowOrders.has(orderKey)) {
-          emailedFlowOrders.add(orderKey);
+        const normalizedPlan = normalizePlan(optionalData.planId || "esencial");
+        const amount = Number(statusData.amount) || 0;
+
+        if (!orderKey) {
+          console.error("[Flow Webhook] No flowOrder/commerceOrder on a status=2 payment — cannot persist safely.");
+          return res.status(500).send("Missing order identifier");
+        }
+        if (!supabaseAdmin) {
+          console.error("[Flow Webhook] Supabase not configured — cannot persist plan activation.");
+          return res.status(500).send("Database not configured");
+        }
+
+        // Resolve the paying user. Checkout always requires a logged-in
+        // session, so this should normally succeed — but money already
+        // changed hands, so a miss is logged loudly for manual reconciliation
+        // rather than silently dropped.
+        let userId: string | null = null;
+        if (optionalData.userEmail) {
+          const { data: profile } = await supabaseAdmin
+            .from("profiles")
+            .select("id")
+            .eq("email", optionalData.userEmail)
+            .maybeSingle();
+          userId = profile?.id || null;
+        }
+        if (!userId) {
+          console.error(`[Flow Webhook] Could not resolve a user for order ${orderKey} (email: ${optionalData.userEmail || "n/a"}) — needs manual reconciliation.`);
+        }
+
+        // Idempotency lives in Postgres (flow_order UNIQUE), not in-memory —
+        // survives Railway restarts and concurrent webhook retries correctly.
+        const { data: inserted, error: insertErr } = await supabaseAdmin
+          .from("payment_transactions")
+          .insert({
+            user_id: userId,
+            memorial_id: optionalData.memorialId || null,
+            memorial_name: optionalData.memorialName || null,
+            plan_id: normalizedPlan,
+            amount,
+            currency: "CLP",
+            status: "completed",
+            provider: "flow_webpay",
+            invoice_number: orderKey,
+            flow_order: orderKey,
+          })
+          .select("id")
+          .maybeSingle();
+
+        if (insertErr && insertErr.code !== "23505") {
+          // 23505 = unique_violation (duplicate webhook delivery) — expected, not an error.
+          console.error("[Flow Webhook] Failed to record transaction:", insertErr.message);
+          return res.status(500).send("Failed to record transaction");
+        }
+
+        if (inserted) {
+          // First time we've seen this order — this is the authoritative write.
+          if (userId) {
+            const { error: entError } = await supabaseAdmin
+              .from("account_entitlements")
+              .update({
+                current_plan: normalizedPlan,
+                subscription_status: "active",
+                subscription_start_date: new Date().toISOString(),
+                next_renewal_date: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+                price_clp: amount,
+              })
+              .eq("user_id", userId);
+            if (entError) console.error("[Flow Webhook] Failed to update account_entitlements:", entError.message);
+          }
+
+          if (optionalData.memorialId && userId) {
+            const { error: memError } = await supabaseAdmin
+              .from("memorials")
+              .update({ plan_id: normalizedPlan })
+              .eq("id", optionalData.memorialId)
+              .eq("owner_id", userId);
+            if (memError) console.error("[Flow Webhook] Failed to update memorial plan_id:", memError.message);
+          }
+
           sendReceiptEmail({
             userEmail: optionalData.userEmail || statusData.payer,
             userName: optionalData.userName,
@@ -598,8 +705,8 @@ Genera 3 opciones de mensajes diferentes en formato JSON:
             invoiceNumber: orderKey,
             paymentMethod: "Flow (Webpay)",
           }).catch((e) => console.error("[Receipt Email] Failed from Flow webhook:", e));
-        } else if (orderKey) {
-          console.log(`[Receipt Email] Skipped duplicate webhook for order ${orderKey}`);
+        } else {
+          console.log(`[Flow Webhook] Duplicate delivery for order ${orderKey} — already processed, skipping.`);
         }
       }
 

@@ -1,6 +1,7 @@
 import React, { useState, useRef } from "react";
 import { useApp } from "../../context/AppContext";
 import { Memorial, PrivacyLevel, MemorialType, PetSpecies } from "../../types";
+import { uploadMemorialAsset } from "../../lib/uploadFile";
 import { WhatsAppButton } from "../whatsapp/WhatsAppButton";
 import {
   Sparkles,
@@ -49,6 +50,11 @@ export const MemorialWizard: React.FC = () => {
   const [currentStep, setCurrentStep] = useState<number>(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
+
+  // Generado una sola vez al montar el wizard: permite subir fotos a Storage
+  // (bajo esta ruta) antes de que exista la fila del memorial en Postgres —
+  // se usa como el id real al crear el memorial al final del wizard.
+  const [draftMemorialId] = useState<string>(() => crypto.randomUUID());
 
   // Admin accounts get Infinity as their quota — show "∞" instead of the literal word.
   const fmtQuota = (n: number) => (n === Infinity ? "∞" : n.toLocaleString("es-CL"));
@@ -221,6 +227,7 @@ export const MemorialWizard: React.FC = () => {
     setIsSubmitting(true);
     try {
       const created = await createMemorial({
+        id: draftMemorialId,
         type: memorialType,
         personName: formData.personName,
         preferredName: formData.preferredName,
@@ -728,22 +735,19 @@ export const MemorialWizard: React.FC = () => {
                       ref={mainPhotoInputRef}
                       accept="image/*"
                       className="hidden"
-                      onChange={(e) => {
+                      onChange={async (e) => {
                         const file = e.target.files?.[0];
-                        if (file) {
-                          if (file.size > 15 * 1024 * 1024) {
-                            notify("warning", "Imagen muy pesada", "El archivo debe pesar menos de 15MB.");
-                            return;
-                          }
-                          const reader = new FileReader();
-                          reader.onload = (event) => {
-                            setFormData((prev) => ({
-                              ...prev,
-                              mainPhoto: event.target?.result as string,
-                            }));
-                            notify("success", "Foto cargada", "Se ha actualizado el retrato principal.");
-                          };
-                          reader.readAsDataURL(file);
+                        if (!file) return;
+                        if (file.size > 15 * 1024 * 1024) {
+                          notify("warning", "Imagen muy pesada", "El archivo debe pesar menos de 15MB.");
+                          return;
+                        }
+                        try {
+                          const url = await uploadMemorialAsset(draftMemorialId, "main", file);
+                          setFormData((prev) => ({ ...prev, mainPhoto: url }));
+                          notify("success", "Foto cargada", "Se ha actualizado el retrato principal.");
+                        } catch (err: any) {
+                          notify("error", "No se pudo subir la foto", err?.message || "Intenta nuevamente.");
                         }
                       }}
                     />
@@ -831,22 +835,19 @@ export const MemorialWizard: React.FC = () => {
                       ref={coverPhotoInputRef}
                       accept="image/*"
                       className="hidden"
-                      onChange={(e) => {
+                      onChange={async (e) => {
                         const file = e.target.files?.[0];
-                        if (file) {
-                          if (file.size > 20 * 1024 * 1024) {
-                            notify("warning", "Imagen muy pesada", "El archivo de portada debe pesar menos de 20MB.");
-                            return;
-                          }
-                          const reader = new FileReader();
-                          reader.onload = (event) => {
-                            setFormData((prev) => ({
-                              ...prev,
-                              coverPhoto: event.target?.result as string,
-                            }));
-                            notify("success", "Portada cargada", "Se ha actualizado la imagen panorámica de fondo.");
-                          };
-                          reader.readAsDataURL(file);
+                        if (!file) return;
+                        if (file.size > 20 * 1024 * 1024) {
+                          notify("warning", "Imagen muy pesada", "El archivo de portada debe pesar menos de 20MB.");
+                          return;
+                        }
+                        try {
+                          const url = await uploadMemorialAsset(draftMemorialId, "cover", file);
+                          setFormData((prev) => ({ ...prev, coverPhoto: url }));
+                          notify("success", "Portada cargada", "Se ha actualizado la imagen panorámica de fondo.");
+                        } catch (err: any) {
+                          notify("error", "No se pudo subir la foto", err?.message || "Intenta nuevamente.");
                         }
                       }}
                     />

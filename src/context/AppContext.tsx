@@ -1,8 +1,9 @@
 import React, { createContext, useContext, useState, useEffect, useMemo } from "react";
 import confetti from "canvas-confetti";
+import { supabase } from "../lib/supabaseClient";
+import { uploadAvatar } from "../lib/uploadFile";
 import {
   User,
-  RegisteredAccount,
   Memorial,
   MemorialType,
   Tribute,
@@ -19,7 +20,7 @@ import {
   UserSubscription,
 } from "../types";
 
-import { INITIAL_ACCOUNTS, INITIAL_MEMORIALS, DEFAULT_PLANS } from "../data/sampleData";
+import { DEFAULT_PLANS } from "../data/sampleData";
 import {
   CENTRALIZED_PLANS,
   getPlanConfig,
@@ -83,23 +84,24 @@ interface AppContextType {
   // Authentication & Subscription
   currentUser: User | null;
   isAuthenticated: boolean;
-  registeredAccounts: RegisteredAccount[];
+  authLoading: boolean;
   userUsage: UserUsageInfo;
   login: (email: string, password?: string) => Promise<{ success: boolean; error?: string }>;
-  register: (name: string, email: string, password?: string, avatarUrl?: string) => Promise<{ success: boolean; error?: string }>;
-  googleLogin: (customProfile?: { name?: string; email?: string; avatarUrl?: string }) => Promise<{ success: boolean; error?: string }>;
-  requestPasswordReset: (email: string) => Promise<{ success: boolean; message: string; resetCode?: string }>;
-  resetPasswordWithCode: (email: string, code: string, newPassword: string) => Promise<{ success: boolean; error?: string }>;
+  register: (name: string, email: string, password?: string, avatarFile?: File) => Promise<{ success: boolean; error?: string }>;
+  googleLogin: () => Promise<{ success: boolean; error?: string }>;
+  requestPasswordReset: (email: string) => Promise<{ success: boolean; message: string }>;
+  confirmPasswordReset: (newPassword: string) => Promise<{ success: boolean; error?: string }>;
   updateUserProfile: (updates: Partial<User>) => Promise<boolean>;
   changePassword: (oldPassword: string, newPassword: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   isAuthModalOpen: boolean;
   setIsAuthModalOpen: (open: boolean) => void;
-  authModalMode: "login" | "register" | "forgot";
-  setAuthModalMode: (mode: "login" | "register" | "forgot") => void;
+  authModalMode: "login" | "register" | "forgot" | "reset-confirm";
+  setAuthModalMode: (mode: "login" | "register" | "forgot" | "reset-confirm") => void;
 
   // Memorials
   memorials: Memorial[];
+  memorialsLoading: boolean;
   currentMemorial: Memorial | null;
   createMemorial: (memorialData: Partial<Memorial>) => Promise<Memorial>;
   updateMemorial: (id: string, updates: Partial<Memorial>) => void;
@@ -175,10 +177,152 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-const LOCAL_STORAGE_KEY_MEMORIALS = "memora_app_memorials_v1";
-const LOCAL_STORAGE_KEY_USER = "memora_app_user_v1";
-const LOCAL_STORAGE_KEY_ACCOUNTS = "memora_registered_accounts_v1";
 const LOCAL_STORAGE_KEY_TRANSACTIONS = "memora_app_transactions_v1";
+const OAUTH_STASH_KEY = "memora_pre_oauth_view_v1";
+
+function mapAuthError(error: { message?: string } | null | undefined): string {
+  const msg = error?.message || "";
+  if (/invalid login credentials/i.test(msg)) return "Correo o contraseña incorrectos.";
+  if (/already registered|user already exists/i.test(msg)) return "Ya existe una cuenta con este correo electrónico. Por favor inicia sesión.";
+  if (/password.*(at least|6)/i.test(msg)) return "La contraseña debe tener al menos 6 caracteres.";
+  if (/rate limit|too many/i.test(msg)) return "Demasiados intentos. Espera un momento antes de volver a intentar.";
+  if (/invalid.*email|unable to validate email/i.test(msg)) return "Por favor ingresa un correo electrónico válido.";
+  return msg || "Ocurrió un error inesperado. Intenta nuevamente.";
+}
+
+// ── Memorial <-> Postgres row mapping (snake_case columns -> camelCase app shape) ──
+function mapTimelineRow(r: any): TimelineEvent {
+  return {
+    id: r.id, memorialId: r.memorial_id, year: r.year, date: r.date || undefined,
+    title: r.title, description: r.description, category: r.category,
+    photoUrl: r.photo_url || undefined, location: r.location || undefined,
+  };
+}
+function mapMediaRow(r: any): MediaItem {
+  return {
+    id: r.id, memorialId: r.memorial_id, type: r.type, url: r.url,
+    thumbnailUrl: r.thumbnail_url || undefined, title: r.title || "", description: r.description || undefined,
+    date: r.date || undefined, albumId: r.album_id || undefined, albumTitle: r.album_title || undefined,
+    tags: r.tags || undefined, uploaderName: r.uploader_name, uploaderEmail: r.uploader_email || undefined,
+    status: r.status, uploadedAt: r.uploaded_at,
+  };
+}
+function mapAlbumRow(r: any): Album {
+  return { id: r.id, memorialId: r.memorial_id, title: r.title, description: r.description || undefined, coverUrl: r.cover_url || undefined, itemCount: r.item_count };
+}
+function mapTributeRow(r: any, replies: any[]): Tribute {
+  return {
+    id: r.id, memorialId: r.memorial_id, authorName: r.author_name, authorEmail: r.author_email || undefined,
+    relationship: r.relationship || undefined, message: r.message, photoUrl: r.photo_url || undefined,
+    candleLit: r.candle_lit, flowerPlaced: r.flower_placed, heartCount: r.heart_count,
+    status: r.status, createdAt: r.created_at,
+    replies: replies.filter((rep) => rep.tribute_id === r.id).map((rep) => ({ id: rep.id, authorName: rep.author_name, message: rep.message, createdAt: rep.created_at })),
+  };
+}
+function mapFamilyRow(r: any): FamilyMember {
+  return { id: r.id, memorialId: r.memorial_id, name: r.name, relationship: r.relationship, photoUrl: r.photo_url || undefined, birthYear: r.birth_year || undefined, generation: r.generation || undefined, notes: r.notes || undefined };
+}
+function mapEventRow(r: any): MemorialEvent {
+  return { id: r.id, memorialId: r.memorial_id, title: r.title, type: r.type, date: r.date, time: r.time, locationName: r.location_name, address: r.address || undefined, virtualLink: r.virtual_link || undefined, description: r.description || undefined, rsvpCount: r.rsvp_count };
+}
+function mapCollaboratorRow(r: any): Collaborator {
+  return { id: r.id, memorialId: r.memorial_id, userId: r.user_id || undefined, name: r.name, email: r.email, role: r.role, status: r.status, invitedAt: r.invited_at };
+}
+function mapMemorialRow(row: any, children: { timeline: any[]; media: any[]; albums: any[]; tributes: any[]; tributeReplies: any[]; family: any[]; events: any[]; collaborators: any[] }): Memorial {
+  return {
+    id: row.id, slug: row.slug, type: row.type, personName: row.person_name,
+    preferredName: row.preferred_name || undefined, birthDate: row.birth_date || "", passingDate: row.passing_date || "",
+    birthPlace: row.birth_place || undefined, restingPlace: row.resting_place || undefined,
+    mainPhoto: row.main_photo || "", coverPhoto: row.cover_photo || undefined, quote: row.quote || undefined,
+    summary: row.summary || "", biography: row.biography || "", privacy: row.privacy,
+    password: undefined, // password_hash never leaves the server
+    status: row.status, ownerId: row.owner_id, ownerName: row.owner_name, ownerEmail: row.owner_email,
+    planId: row.plan_id, enableTributeAutoApproval: row.enable_tribute_auto_approval,
+    backgroundMusicTitle: row.background_music_title || undefined, backgroundMusicUrl: row.background_music_url || undefined,
+    qrCodeUrl: row.qr_code_url || undefined, createdAt: row.created_at, updatedAt: row.updated_at,
+    species: row.species || undefined, breed: row.breed || undefined, personality: row.personality || undefined,
+    favoriteThings: row.favorite_things || undefined, favoritePlace: row.favorite_place || undefined,
+    anecdote: row.anecdote || undefined, arrivalStory: row.arrival_story || undefined,
+    specialTrait: row.special_trait || undefined, petMemoryQuote: row.pet_memory_quote || undefined,
+    timeline: children.timeline.map(mapTimelineRow),
+    media: children.media.map(mapMediaRow),
+    albums: children.albums.map(mapAlbumRow),
+    tributes: children.tributes.map((t) => mapTributeRow(t, children.tributeReplies)),
+    family: children.family.map(mapFamilyRow),
+    events: children.events.map(mapEventRow),
+    collaborators: children.collaborators.map(mapCollaboratorRow),
+  };
+}
+
+// Fetches one or more memorial rows plus all their child tables in parallel and
+// assembles each into the app's nested Memorial shape.
+async function fetchMemorialsByFilter(filter: { ownerIds?: string[]; ids?: string[]; slug?: string }): Promise<Memorial[]> {
+  let query = supabase.from("memorials").select("*");
+  if (filter.ownerIds?.length) query = query.in("owner_id", filter.ownerIds);
+  if (filter.ids?.length) query = query.in("id", filter.ids);
+  if (filter.slug) query = query.eq("slug", filter.slug);
+  const { data: rows, error } = await query;
+  if (error || !rows || rows.length === 0) return [];
+
+  const ids = rows.map((r) => r.id);
+  const [timeline, media, albums, tributes, family, events, collaborators] = await Promise.all([
+    supabase.from("timeline_events").select("*").in("memorial_id", ids),
+    supabase.from("media_items").select("*").in("memorial_id", ids),
+    supabase.from("albums").select("*").in("memorial_id", ids),
+    supabase.from("tributes").select("*").in("memorial_id", ids),
+    supabase.from("family_members").select("*").in("memorial_id", ids),
+    supabase.from("memorial_events").select("*").in("memorial_id", ids),
+    supabase.from("collaborators").select("*").in("memorial_id", ids),
+  ]);
+  const tributeIds = (tributes.data || []).map((t: any) => t.id);
+  const { data: tributeReplies } = tributeIds.length
+    ? await supabase.from("tribute_replies").select("*").in("tribute_id", tributeIds)
+    : { data: [] as any[] };
+
+  return rows.map((row) =>
+    mapMemorialRow(row, {
+      timeline: (timeline.data || []).filter((r: any) => r.memorial_id === row.id),
+      media: (media.data || []).filter((r: any) => r.memorial_id === row.id),
+      albums: (albums.data || []).filter((r: any) => r.memorial_id === row.id),
+      tributes: (tributes.data || []).filter((r: any) => r.memorial_id === row.id),
+      tributeReplies: tributeReplies || [],
+      family: (family.data || []).filter((r: any) => r.memorial_id === row.id),
+      events: (events.data || []).filter((r: any) => r.memorial_id === row.id),
+      collaborators: (collaborators.data || []).filter((r: any) => r.memorial_id === row.id),
+    })
+  );
+}
+
+async function fetchUserProfile(authUser: { id: string } | null | undefined): Promise<User | null> {
+  if (!authUser) return null;
+  const [{ data: profile }, { data: ent }] = await Promise.all([
+    supabase.from("profiles").select("*").eq("id", authUser.id).maybeSingle(),
+    supabase.from("account_entitlements").select("*").eq("user_id", authUser.id).maybeSingle(),
+  ]);
+  if (!profile || !ent) return null;
+
+  const subscription: UserSubscription = {
+    planId: ent.current_plan,
+    status: ent.subscription_status,
+    startDate: ent.subscription_start_date,
+    freeTrialEndDate: ent.free_trial_end_date || undefined,
+    nextRenewalDate: ent.next_renewal_date || undefined,
+    priceCLP: ent.price_clp,
+  };
+
+  return {
+    id: profile.id,
+    name: profile.name,
+    email: profile.email,
+    avatarUrl: profile.avatar_url || undefined,
+    role: ent.role,
+    currentPlan: ent.current_plan,
+    subscription,
+    authProvider: (profile.auth_provider as "email" | "google") || "email",
+    createdAt: profile.created_at,
+    lastLoginAt: profile.last_login_at || undefined,
+  };
+}
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Navigation
@@ -195,70 +339,50 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCurrentView("dashboard");
   };
 
-  // Registered Accounts Database
-  const [registeredAccounts, setRegisteredAccounts] = useState<RegisteredAccount[]>(() => {
-    try {
-      const saved = localStorage.getItem(LOCAL_STORAGE_KEY_ACCOUNTS);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          // Always reconcile built-in seed accounts (role, password, plan) with
-          // their current definition in code — otherwise a stale copy cached in
-          // this browser's localStorage from an earlier session would silently
-          // keep overriding fixes like granting the admin role.
-          const seedEmails = new Set(INITIAL_ACCOUNTS.map((a) => a.email.toLowerCase()));
-          const realUserAccounts = parsed.filter(
-            (a: RegisteredAccount) => !seedEmails.has(a.email.toLowerCase())
-          );
-          return [...INITIAL_ACCOUNTS, ...realUserAccounts];
-        }
-      }
-      return INITIAL_ACCOUNTS;
-    } catch {
-      return INITIAL_ACCOUNTS;
-    }
-  });
-
-  // Auth User Session
-  const [currentUser, setCurrentUser] = useState<User | null>(() => {
-    try {
-      const saved = localStorage.getItem(LOCAL_STORAGE_KEY_USER);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed) {
-          if (!parsed.subscription) {
-            const planConfig = getPlanConfig(parsed.currentPlan);
-            parsed.subscription = {
-              planId: normalizePlanId(parsed.currentPlan),
-              status: planConfig.isFreeTrialAvailable ? "free_trial" : "active",
-              startDate: parsed.createdAt || new Date().toISOString(),
-              freeTrialEndDate: planConfig.isFreeTrialAvailable
-                ? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()
-                : undefined,
-              nextRenewalDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
-              priceCLP: planConfig.priceMonthlyCLP,
-            };
-          }
-          return parsed;
-        }
-      }
-      return null;
-    } catch {
-      return null;
-    }
-  });
+  // Auth User Session — sourced from Supabase Auth, not localStorage. Hydrated
+  // by the session-sync effect further below (getSession + onAuthStateChange).
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const [authModalMode, setAuthModalMode] = useState<"login" | "register" | "forgot">("login");
+  const [authModalMode, setAuthModalMode] = useState<"login" | "register" | "forgot" | "reset-confirm">("login");
 
-  // Memorials Data
-  const [memorials, setMemorials] = useState<Memorial[]>(() => {
-    try {
-      const saved = localStorage.getItem(LOCAL_STORAGE_KEY_MEMORIALS);
-      return saved ? JSON.parse(saved) : INITIAL_MEMORIALS;
-    } catch {
-      return INITIAL_MEMORIALS;
+  // Memorials Data — loaded from Supabase (own memorials for a regular user,
+  // all memorials for admins), not localStorage. Individual public memorials
+  // opened by slug (not owned by the viewer) are fetched on-demand and merged
+  // in by openMemorialBySlug further below.
+  const [memorials, setMemorials] = useState<Memorial[]>([]);
+  const [memorialsLoading, setMemorialsLoading] = useState(false);
+  const [platformUserCount, setPlatformUserCount] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    if (!currentUser) {
+      setMemorials([]);
+      return;
     }
-  });
+    setMemorialsLoading(true);
+    const loadMine = async () => {
+      const results =
+        currentUser.role === "admin"
+          ? await fetchMemorialsByFilter({})
+          : await fetchMemorialsByFilter({ ownerIds: [currentUser.id] });
+      if (!active) return;
+      setMemorials(results);
+      setMemorialsLoading(false);
+    };
+    loadMine();
+    if (currentUser.role === "admin") {
+      supabase
+        .from("profiles")
+        .select("*", { count: "exact", head: true })
+        .then(({ count }) => {
+          if (active && typeof count === "number") setPlatformUserCount(count);
+        });
+    }
+    return () => {
+      active = false;
+    };
+  }, [currentUser?.id, currentUser?.role]);
 
   // Transactions Data
   const [transactions, setTransactions] = useState<PaymentTransaction[]>(() => {
@@ -307,34 +431,60 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
   }, [currentUser?.id, currentUser?.currentPlan, currentUser?.subscription?.status, currentUser?.role, memorials]);
 
-  // Sync to LocalStorage
+  // Supabase Auth session sync — replaces the old localStorage-backed user
+  // state. supabase-js persists the JWT itself; this effect just hydrates
+  // `currentUser` from it (profile + entitlements) and keeps it in sync.
   useEffect(() => {
-    try {
-      localStorage.setItem(LOCAL_STORAGE_KEY_MEMORIALS, JSON.stringify(memorials));
-    } catch (e) {
-      console.error("Failed to persist memorials:", e);
-    }
-  }, [memorials]);
+    let active = true;
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(LOCAL_STORAGE_KEY_ACCOUNTS, JSON.stringify(registeredAccounts));
-    } catch (e) {
-      console.error("Failed to persist accounts:", e);
-    }
-  }, [registeredAccounts]);
-
-  useEffect(() => {
-    try {
-      if (currentUser) {
-        localStorage.setItem(LOCAL_STORAGE_KEY_USER, JSON.stringify(currentUser));
-      } else {
-        localStorage.removeItem(LOCAL_STORAGE_KEY_USER);
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (!active) return;
+      const user = await fetchUserProfile(session?.user);
+      if (active) {
+        setCurrentUser(user);
+        setAuthLoading(false);
       }
-    } catch (e) {
-      console.error("Failed to persist user session:", e);
-    }
-  }, [currentUser]);
+    });
+
+    const { data: sub } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!active) return;
+
+      if (event === "PASSWORD_RECOVERY") {
+        setIsAuthModalOpen(true);
+        setAuthModalMode("reset-confirm");
+        return;
+      }
+
+      if (event === "SIGNED_OUT") {
+        setCurrentUser(null);
+        return;
+      }
+
+      const user = await fetchUserProfile(session?.user);
+      if (!active) return;
+      setCurrentUser(user);
+
+      if (event === "SIGNED_IN") {
+        // Restore whatever screen/plan the user was on before a Google
+        // redirect took them away from the app (stashed in googleLogin()).
+        try {
+          const stashed = sessionStorage.getItem(OAUTH_STASH_KEY);
+          if (stashed) {
+            sessionStorage.removeItem(OAUTH_STASH_KEY);
+            const { view, plan, memorialId } = JSON.parse(stashed);
+            if (view) setCurrentView(view);
+            if (plan) setSelectedPlanForCheckout(plan);
+            if (memorialId) setTargetMemorialForCheckout(memorialId);
+          }
+        } catch {}
+      }
+    });
+
+    return () => {
+      active = false;
+      sub.subscription.unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     try {
@@ -362,6 +512,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (found) {
           setSelectedMemorialSlug(found.slug);
           setCurrentView("memorial-view");
+        } else {
+          // Direct link (QR / share URL) to a memorial not already in local
+          // state — e.g. an anonymous visitor, or someone else's public
+          // memorial. Fetch it from Supabase (RLS governs what comes back).
+          fetchMemorialsByFilter({ slug: targetSlug }).then((results) => {
+            if (results.length > 0) {
+              setMemorials((prev) => [...prev.filter((m) => m.slug !== targetSlug), ...results]);
+              setSelectedMemorialSlug(results[0].slug);
+              setCurrentView("memorial-view");
+            }
+          });
         }
       }
 
@@ -403,50 +564,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             const normalizedPlan = normalizePlanId(optionalData.planId);
             const planConfig = getPlanConfig(normalizedPlan);
             const memorialId: string | undefined = optionalData.memorialId || undefined;
-            const verifiedAmount = Number(statusData.amount) || planConfig.priceMonthlyCLP;
 
-            const newTx: PaymentTransaction = {
-              id: `tx-flow-${statusData.flowOrder || Date.now()}`,
-              userId: currentUser?.id || "user-demo-1",
-              memorialId,
-              memorialName: memorialId ? memorials.find((m) => m.id === memorialId)?.personName : undefined,
-              planId: normalizedPlan,
-              amount: verifiedAmount,
-              currency: "CLP",
-              status: "completed",
-              provider: "flow_webpay",
-              invoiceNumber: `FLOW-${statusData.flowOrder || statusData.commerceOrder || Date.now()}`,
-              createdAt: new Date().toISOString(),
-            };
-
-            setTransactions((prev) => [newTx, ...prev.filter((t) => t.id !== newTx.id)]);
-
-            const newSub: UserSubscription = {
-              planId: normalizedPlan,
-              status: "active",
-              startDate: new Date().toISOString(),
-              nextRenewalDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
-              priceCLP: planConfig.priceMonthlyCLP,
-            };
-
-            if (currentUser) {
-              const updatedUser: User = {
-                ...currentUser,
-                currentPlan: normalizedPlan,
-                subscription: newSub,
-              };
-              setCurrentUser(updatedUser);
-              setRegisteredAccounts((prev) =>
-                prev.map((a) =>
-                  a.id === currentUser.id ? { ...a, currentPlan: normalizedPlan, subscription: newSub } : a
-                )
-              );
+            // El único que escribe account_entitlements/memorials.plan_id es
+            // el webhook de Flow en server.ts (con la service role key) —
+            // este efecto solo espera a que esa escritura ya haya ocurrido y
+            // refleja el resultado real desde Postgres. Flow llama al webhook
+            // antes de redirigir al navegador, así que normalmente ya está
+            // listo; el reintento cubre el margen raro donde no lo esté aún.
+            let reflected = false;
+            for (let attempt = 0; attempt < 5 && !reflected; attempt++) {
+              if (attempt > 0) await new Promise((r) => setTimeout(r, 1500));
+              const { data: ent } = await supabase
+                .from("account_entitlements")
+                .select("current_plan, subscription_status")
+                .eq("user_id", currentUser?.id)
+                .maybeSingle();
+              if (ent?.subscription_status === "active" && ent?.current_plan === normalizedPlan) {
+                reflected = true;
+              }
             }
 
-            if (memorialId) {
-              setMemorials((prev) =>
-                prev.map((m) => (m.id === memorialId ? { ...m, planId: normalizedPlan } : m))
+            if (!reflected) {
+              notify(
+                "warning",
+                "Tu pago fue aprobado, activando tu plan...",
+                "Puede tardar unos segundos en reflejarse. Si tras un par de minutos no ves tu plan activo, contáctanos por WhatsApp."
               );
+              return;
+            }
+
+            const user = await fetchUserProfile(currentUser);
+            if (user) setCurrentUser(user);
+
+            if (memorialId) {
+              const full = await fetchMemorialsByFilter({ ids: [memorialId] });
+              if (full[0]) {
+                setMemorials((prev) => [...prev.filter((m) => m.id !== memorialId), ...full]);
+              }
             }
 
             confetti({
@@ -503,61 +657,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Auth Handlers
   const login = async (email: string, password?: string): Promise<{ success: boolean; error?: string }> => {
     const normalizedEmail = email.trim().toLowerCase();
-    
     if (!normalizedEmail) {
       return { success: false, error: "Ingresa tu correo electrónico." };
     }
 
-    const account = registeredAccounts.find(
-      (a) => a.email.toLowerCase() === normalizedEmail
-    );
-
-    if (!account) {
-      return {
-        success: false,
-        error: "No existe una cuenta registrada con este correo. Por favor regístrate primero.",
-      };
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: normalizedEmail,
+      password: password || "",
+    });
+    if (error || !data.user) {
+      return { success: false, error: mapAuthError(error) };
     }
 
-    if (account.password && password && account.password !== password) {
-      return {
-        success: false,
-        error: "La contraseña ingresada es incorrecta. Por favor intenta nuevamente.",
-      };
+    await supabase.from("profiles").update({ last_login_at: new Date().toISOString() }).eq("id", data.user.id);
+    const user = await fetchUserProfile(data.user);
+    if (!user) {
+      return { success: false, error: "No se pudo cargar tu perfil. Intenta nuevamente." };
     }
 
-    const planConfig = getPlanConfig(account.currentPlan);
-    const sub: UserSubscription = account.subscription || {
-      planId: normalizePlanId(account.currentPlan),
-      status: planConfig.isFreeTrialAvailable ? "free_trial" : "active",
-      startDate: account.createdAt || new Date().toISOString(),
-      freeTrialEndDate: planConfig.isFreeTrialAvailable
-        ? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()
-        : undefined,
-      nextRenewalDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
-      priceCLP: planConfig.priceMonthlyCLP,
-    };
-
-    const updatedUser: User = {
-      id: account.id,
-      name: account.name,
-      email: account.email,
-      avatarUrl: account.avatarUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80",
-      role: account.role,
-      currentPlan: account.currentPlan,
-      subscription: sub,
-      authProvider: account.authProvider,
-      createdAt: account.createdAt,
-      lastLoginAt: new Date().toISOString(),
-    };
-
-    setRegisteredAccounts((prev) =>
-      prev.map((a) => (a.id === account.id ? { ...a, subscription: sub, lastLoginAt: new Date().toISOString() } : a))
-    );
-
-    setCurrentUser(updatedUser);
+    setCurrentUser(user);
     setIsAuthModalOpen(false);
-    notify("success", "Bienvenido a MEMORA", `Sesión iniciada como ${updatedUser.name}`);
+    notify("success", "Bienvenido a MEMORA", `Sesión iniciada como ${user.name}`);
     return { success: true };
   };
 
@@ -565,7 +685,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     name: string,
     email: string,
     password?: string,
-    avatarUrl?: string
+    avatarFile?: File
   ): Promise<{ success: boolean; error?: string }> => {
     const cleanName = name.trim();
     const cleanEmail = email.trim().toLowerCase();
@@ -583,58 +703,39 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, error: "La contraseña debe tener al menos 6 caracteres." };
     }
 
-    const existing = registeredAccounts.find((a) => a.email.toLowerCase() === cleanEmail);
-    if (existing) {
-      return {
-        success: false,
-        error: "Ya existe una cuenta con este correo electrónico. Por favor inicia sesión.",
-      };
+    // No plan is free — the base Esencial plan is $990 CLP/año and must be
+    // pagado via Flow before any MEMORA can be created. Registering only
+    // reserves the account; account_entitlements defaults to pending_payment
+    // via the handle_new_user Postgres trigger.
+    const { data, error } = await supabase.auth.signUp({
+      email: cleanEmail,
+      password,
+      options: { data: { name: cleanName } },
+    });
+    if (error) {
+      return { success: false, error: mapAuthError(error) };
+    }
+    if (!data.session || !data.user) {
+      return { success: false, error: "Revisa tu correo para confirmar tu cuenta antes de continuar." };
     }
 
-    const now = new Date();
+    // The avatar can't be uploaded to Storage until the account (and its user
+    // id) exists, so it happens here rather than during signUp() itself.
+    if (avatarFile) {
+      try {
+        const url = await uploadAvatar(data.user.id, avatarFile);
+        await supabase.from("profiles").update({ avatar_url: url }).eq("id", data.user.id);
+      } catch (e: any) {
+        console.error("Avatar upload failed:", e?.message);
+      }
+    }
 
-    // No plan is free — the base Esencial plan is $990 CLP/year and must be
-    // paid through Flow before any MEMORA can be created. Registering only
-    // reserves the account; it does not grant usable quota.
-    const initialSubscription: UserSubscription = {
-      planId: "esencial",
-      status: "pending_payment",
-      startDate: now.toISOString(),
-      priceCLP: 990,
-    };
+    const user = await fetchUserProfile(data.user);
+    if (!user) {
+      return { success: false, error: "No se pudo crear tu perfil. Intenta nuevamente." };
+    }
 
-    const newAccount: RegisteredAccount = {
-      id: `user-${Date.now()}`,
-      name: cleanName,
-      email: cleanEmail,
-      password: password,
-      avatarUrl:
-        avatarUrl ||
-        "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80",
-      role: "user",
-      currentPlan: "esencial",
-      subscription: initialSubscription,
-      authProvider: "email",
-      createdAt: now.toISOString(),
-      lastLoginAt: now.toISOString(),
-    };
-
-    setRegisteredAccounts((prev) => [...prev, newAccount]);
-
-    const newUser: User = {
-      id: newAccount.id,
-      name: newAccount.name,
-      email: newAccount.email,
-      avatarUrl: newAccount.avatarUrl,
-      role: newAccount.role,
-      currentPlan: "esencial",
-      subscription: initialSubscription,
-      authProvider: "email",
-      createdAt: newAccount.createdAt,
-      lastLoginAt: newAccount.lastLoginAt,
-    };
-
-    setCurrentUser(newUser);
+    setCurrentUser(user);
     setIsAuthModalOpen(false);
     notify(
       "success",
@@ -645,189 +746,85 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { success: true };
   };
 
-  const googleLogin = async (customProfile?: {
-    name?: string;
-    email?: string;
-    avatarUrl?: string;
-  }): Promise<{ success: boolean; error?: string }> => {
-    if (!customProfile?.email) {
-      return { success: false, error: "No se recibió un correo verificado de Google." };
-    }
-    const targetEmail = customProfile.email;
-    const targetName = customProfile.name || targetEmail.split("@")[0];
-    const targetAvatar = customProfile.avatarUrl || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=300&q=80";
-
-    const existingAccount = registeredAccounts.find(
-      (a) => a.email.toLowerCase() === targetEmail.toLowerCase()
-    );
-
-    let loggedInUser: User;
-    const isNewSignup = !existingAccount;
-
-    if (existingAccount) {
-      const planConfig = getPlanConfig(existingAccount.currentPlan);
-      const sub: UserSubscription = existingAccount.subscription || {
-        planId: normalizePlanId(existingAccount.currentPlan),
-        status: planConfig.isFreeTrialAvailable ? "free_trial" : "active",
-        startDate: existingAccount.createdAt,
-        freeTrialEndDate: planConfig.isFreeTrialAvailable
-          ? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()
-          : undefined,
-        nextRenewalDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
-        priceCLP: planConfig.priceMonthlyCLP,
-      };
-
-      loggedInUser = {
-        id: existingAccount.id,
-        name: existingAccount.name,
-        email: existingAccount.email,
-        avatarUrl: existingAccount.avatarUrl || targetAvatar,
-        role: existingAccount.role,
-        currentPlan: existingAccount.currentPlan,
-        subscription: sub,
-        authProvider: "google",
-        createdAt: existingAccount.createdAt,
-        lastLoginAt: new Date().toISOString(),
-      };
-
-      setRegisteredAccounts((prev) =>
-        prev.map((a) =>
-          a.id === existingAccount.id
-            ? { ...a, subscription: sub, lastLoginAt: new Date().toISOString() }
-            : a
-        )
+  // Redirige a Google (Supabase Auth nativo) en vez del popup anterior. La
+  // vista/plan actuales se guardan para restaurarlos al volver — ver el
+  // efecto de sincronización de sesión más arriba.
+  const googleLogin = async (): Promise<{ success: boolean; error?: string }> => {
+    try {
+      sessionStorage.setItem(
+        OAUTH_STASH_KEY,
+        JSON.stringify({
+          view: currentView,
+          plan: selectedPlanForCheckout,
+          memorialId: targetMemorialForCheckout,
+        })
       );
-    } else {
-      const now = new Date();
+    } catch {}
 
-      // Same rule as email registration: no plan is free, Google sign-up only
-      // reserves the account until the $990 CLP Esencial plan is paid via Flow.
-      const initialSubscription: UserSubscription = {
-        planId: "esencial",
-        status: "pending_payment",
-        startDate: now.toISOString(),
-        priceCLP: 990,
-      };
-
-      const newGoogleAccount: RegisteredAccount = {
-        id: `user-google-${Date.now()}`,
-        name: targetName,
-        email: targetEmail,
-        avatarUrl: targetAvatar,
-        role: "user",
-        currentPlan: "esencial",
-        subscription: initialSubscription,
-        authProvider: "google",
-        createdAt: now.toISOString(),
-        lastLoginAt: now.toISOString(),
-      };
-
-      setRegisteredAccounts((prev) => [...prev, newGoogleAccount]);
-
-      loggedInUser = {
-        id: newGoogleAccount.id,
-        name: newGoogleAccount.name,
-        email: newGoogleAccount.email,
-        avatarUrl: newGoogleAccount.avatarUrl,
-        role: "user",
-        currentPlan: "esencial",
-        subscription: initialSubscription,
-        authProvider: "google",
-        createdAt: newGoogleAccount.createdAt,
-        lastLoginAt: newGoogleAccount.lastLoginAt,
-      };
-    }
-
-    setCurrentUser(loggedInUser);
-    setIsAuthModalOpen(false);
-    if (isNewSignup) {
-      notify(
-        "success",
-        "Cuenta creada con Google",
-        "Elige el plan que mejor se ajuste a tu familia para activar tu MEMORA."
-      );
-      goToPlanSelection();
-    } else {
-      notify("success", "Sesión iniciada con Google", `Bienvenido de vuelta, ${loggedInUser.name}`);
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: window.location.origin },
+    });
+    if (error) {
+      return { success: false, error: mapAuthError(error) };
     }
     return { success: true };
   };
 
-  const requestPasswordReset = async (
-    email: string
-  ): Promise<{ success: boolean; message: string; resetCode?: string }> => {
+  const requestPasswordReset = async (email: string): Promise<{ success: boolean; message: string }> => {
     const cleanEmail = email.trim().toLowerCase();
-    const account = registeredAccounts.find((a) => a.email.toLowerCase() === cleanEmail);
-
-    if (!account) {
-      return {
-        success: false,
-        message: "No encontramos ninguna cuenta asociada a este correo electrónico.",
-      };
+    if (!cleanEmail) {
+      return { success: false, message: "Ingresa tu correo electrónico." };
     }
 
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
-    setRegisteredAccounts((prev) =>
-      prev.map((a) => (a.id === account.id ? { ...a, resetToken: code } : a))
-    );
+    const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
+      redirectTo: window.location.origin,
+    });
+    if (error) {
+      return { success: false, message: mapAuthError(error) };
+    }
 
-    notify("info", "Código de recuperación enviado", `Tu código de seguridad es: ${code}`);
+    notify("info", "Correo enviado", "Revisa tu bandeja de entrada para restablecer tu contraseña.");
     return {
       success: true,
-      message: `Hemos generado el código de recuperación para ${account.email}.`,
-      resetCode: code,
+      message: `Te enviamos un correo a ${cleanEmail} con un link para restablecer tu contraseña.`,
     };
   };
 
-  const resetPasswordWithCode = async (
-    email: string,
-    code: string,
-    newPassword: string
-  ): Promise<{ success: boolean; error?: string }> => {
-    const cleanEmail = email.trim().toLowerCase();
-    const account = registeredAccounts.find((a) => a.email.toLowerCase() === cleanEmail);
-
-    if (!account) {
-      return { success: false, error: "Cuenta no encontrada." };
-    }
-
-    if (account.resetToken && account.resetToken !== code.trim() && code.trim() !== "123456") {
-      return { success: false, error: "El código de verificación es inválido." };
-    }
-
+  // Llamado desde la pantalla que aparece automáticamente cuando el usuario
+  // vuelve a MEMORA tras hacer clic en el link de recuperación (ver evento
+  // PASSWORD_RECOVERY en el efecto de sincronización de sesión).
+  const confirmPasswordReset = async (newPassword: string): Promise<{ success: boolean; error?: string }> => {
     if (!newPassword || newPassword.length < 6) {
       return { success: false, error: "La nueva contraseña debe tener al menos 6 caracteres." };
     }
 
-    setRegisteredAccounts((prev) =>
-      prev.map((a) =>
-        a.id === account.id ? { ...a, password: newPassword, resetToken: undefined } : a
-      )
-    );
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) {
+      return { success: false, error: mapAuthError(error) };
+    }
 
-    notify("success", "Contraseña actualizada", "Ya puedes iniciar sesión con tu nueva clave.");
+    notify("success", "Contraseña actualizada", "Ya puedes usar tu nueva contraseña.");
     return { success: true };
   };
 
   const updateUserProfile = async (updates: Partial<User>): Promise<boolean> => {
     if (!currentUser) return false;
 
-    const updated = { ...currentUser, ...updates };
-    setCurrentUser(updated);
+    const { error } = await supabase
+      .from("profiles")
+      .update({
+        name: updates.name ?? currentUser.name,
+        avatar_url: updates.avatarUrl ?? currentUser.avatarUrl,
+      })
+      .eq("id", currentUser.id);
 
-    setRegisteredAccounts((prev) =>
-      prev.map((a) =>
-        a.id === currentUser.id
-          ? {
-              ...a,
-              name: updates.name ?? a.name,
-              avatarUrl: updates.avatarUrl ?? a.avatarUrl,
-              email: updates.email ?? a.email,
-            }
-          : a
-      )
-    );
+    if (error) {
+      notify("error", "No se pudo actualizar tu perfil", error.message);
+      return false;
+    }
 
+    setCurrentUser({ ...currentUser, ...updates });
     notify("success", "Perfil actualizado", "Los cambios han sido guardados exitosamente.");
     return true;
   };
@@ -838,26 +835,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   ): Promise<{ success: boolean; error?: string }> => {
     if (!currentUser) return { success: false, error: "No hay sesión activa." };
 
-    const account = registeredAccounts.find((a) => a.id === currentUser.id);
-    if (!account) return { success: false, error: "Cuenta no encontrada." };
-
-    if (account.password && account.password !== oldPassword) {
-      return { success: false, error: "La contraseña actual no es correcta." };
-    }
-
     if (!newPassword || newPassword.length < 6) {
       return { success: false, error: "La nueva contraseña debe tener al menos 6 caracteres." };
     }
 
-    setRegisteredAccounts((prev) =>
-      prev.map((a) => (a.id === currentUser.id ? { ...a, password: newPassword } : a))
-    );
+    // Supabase's updateUser() trusts the current session and doesn't re-check
+    // the old password by itself — re-authenticate first to preserve that guarantee.
+    const { error: reauthError } = await supabase.auth.signInWithPassword({
+      email: currentUser.email,
+      password: oldPassword,
+    });
+    if (reauthError) {
+      return { success: false, error: "La contraseña actual no es correcta." };
+    }
+
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) {
+      return { success: false, error: mapAuthError(error) };
+    }
 
     notify("success", "Contraseña cambiada", "Tu clave ha sido actualizada con éxito.");
     return { success: true };
   };
 
   const logout = () => {
+    supabase.auth.signOut();
     setCurrentUser(null);
     setCurrentView("landing");
     notify("info", "Has cerrado sesión", "Esperamos verte pronto en MEMORA.");
@@ -869,6 +871,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setSelectedMemorialId(null);
     setCurrentView("memorial-view");
     window.scrollTo({ top: 0, behavior: "smooth" });
+
+    // Public memorials owned by someone else aren't in the viewer's own
+    // `memorials` list — fetch and merge it in on demand (RLS still governs
+    // what's actually returned: public+published, or owner/admin/collaborator).
+    const alreadyLoaded = memorials.some((m) => m.slug === slug);
+    if (!alreadyLoaded) {
+      fetchMemorialsByFilter({ slug }).then((found) => {
+        if (found.length > 0) {
+          setMemorials((prev) => [...prev.filter((m) => m.slug !== slug), ...found]);
+        }
+      });
+    }
   };
 
   const openMemorialById = (id: string) => {
@@ -918,6 +932,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       throw new Error("No se puede crear la MEMORA: plan no activo o límite alcanzado");
     }
+    if (!currentUser) throw new Error("Debes iniciar sesión para crear una MEMORA.");
 
     const baseSlug = (data.personName || "recuerdo-eterno")
       .toLowerCase()
@@ -928,81 +943,109 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const uniqueSlug = `${baseSlug}-${Math.floor(100 + Math.random() * 900)}`;
 
-    const newMemorial: Memorial = {
-      id: `mem-${Date.now()}`,
-      slug: uniqueSlug,
-      type: data.type || "person",
-      personName: data.personName || "Nombre y Apellidos",
-      preferredName: data.preferredName || "",
-      birthDate: data.birthDate || "",
-      passingDate: data.passingDate || "",
-      birthPlace: data.birthPlace || "",
-      restingPlace: data.restingPlace || "",
-      mainPhoto:
-        data.mainPhoto ||
-        "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=800&q=80",
-      coverPhoto:
-        data.coverPhoto ||
-        "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1600&q=80",
-      quote: data.quote || `"Su luz y su recuerdo permanecen siempre entre nosotros."`,
-      summary: data.summary || "",
-      biography: data.biography || "",
-      privacy: data.privacy || "public",
-      password: data.password || "",
-      status: "published",
-      ownerId: currentUser?.id || "user-demo-1",
-      ownerName: currentUser?.name || "Familia",
-      ownerEmail: currentUser?.email || "contacto@memora.cl",
-      planId: currentUser?.currentPlan || "esencial",
-      enableTributeAutoApproval: true,
-      backgroundMusicTitle: data.backgroundMusicTitle || "Serenidad al Atardecer — Piano Acústico",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      timeline: data.timeline || [],
-      media: data.media || [],
-      albums: data.albums || [
-        {
-          id: `alb-${Date.now()}-1`,
-          memorialId: `mem-${Date.now()}`,
-          title: "Recuerdos Inolvidables",
-          description: "Momentos y fotografías atesoradas en el corazón.",
-          coverUrl: data.mainPhoto || "https://images.unsplash.com/photo-1511895426328-dc8714191300?auto=format&fit=crop&w=600&q=80",
-          itemCount: 1,
-        },
-      ],
-      tributes: [],
-      family: data.family || [],
-      events: data.events || [],
-      collaborators: [
-        {
-          id: `col-${Date.now()}`,
-          memorialId: `mem-${Date.now()}`,
-          name: currentUser?.name || "Propietario",
-          email: currentUser?.email || "usuario@ejemplo.com",
-          role: "owner",
-          status: "active",
-          invitedAt: new Date().toISOString(),
-        },
-      ],
-    };
+    const { data: row, error } = await supabase
+      .from("memorials")
+      .insert({
+        // Permite que el wizard genere el id ANTES de crear la fila, para
+        // poder subir fotos a Storage bajo esa ruta mientras el usuario aún
+        // está completando el formulario (ver MemorialWizard.tsx).
+        ...(data.id ? { id: data.id } : {}),
+        slug: uniqueSlug,
+        type: data.type || "person",
+        person_name: data.personName || "Nombre y Apellidos",
+        preferred_name: data.preferredName || null,
+        birth_date: data.birthDate || null,
+        passing_date: data.passingDate || null,
+        birth_place: data.birthPlace || null,
+        resting_place: data.restingPlace || null,
+        main_photo: data.mainPhoto || "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=800&q=80",
+        cover_photo: data.coverPhoto || "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1600&q=80",
+        quote: data.quote || `"Su luz y su recuerdo permanecen siempre entre nosotros."`,
+        summary: data.summary || "",
+        biography: data.biography || "",
+        privacy: data.privacy || "public",
+        status: "published",
+        owner_id: currentUser.id,
+        owner_name: currentUser.name,
+        owner_email: currentUser.email,
+        plan_id: currentUser.currentPlan,
+        enable_tribute_auto_approval: true,
+        background_music_title: data.backgroundMusicTitle || "Serenidad al Atardecer — Piano Acústico",
+        species: data.species || null,
+        breed: data.breed || null,
+        personality: data.personality || null,
+        favorite_things: data.favoriteThings || null,
+        favorite_place: data.favoritePlace || null,
+        anecdote: data.anecdote || null,
+        arrival_story: data.arrivalStory || null,
+        special_trait: data.specialTrait || null,
+        pet_memory_quote: data.petMemoryQuote || null,
+      })
+      .select()
+      .single();
 
-    setMemorials((prev) => [newMemorial, ...prev]);
-    notify("success", "MEMORA creada con éxito", `El espacio conmemorativo de ${newMemorial.personName} está listo.`);
-    return newMemorial;
+    if (error || !row) {
+      notify("error", "No se pudo crear la MEMORA", error?.message || "Intenta nuevamente.");
+      throw error || new Error("No se pudo crear la MEMORA");
+    }
+
+    // Nota: privacy="password" aún no protege de verdad (requiere hashear
+    // server-side — ver Fase 4 del plan); se guarda sin password_hash por ahora.
+    await supabase.from("albums").insert({
+      memorial_id: row.id,
+      title: "Recuerdos Inolvidables",
+      description: "Momentos y fotografías atesoradas en el corazón.",
+      cover_url: data.mainPhoto || "https://images.unsplash.com/photo-1511895426328-dc8714191300?auto=format&fit=crop&w=600&q=80",
+      item_count: 0,
+    });
+
+    const full = await fetchMemorialsByFilter({ ids: [row.id] });
+    const finalMemorial =
+      full[0] ||
+      mapMemorialRow(row, { timeline: [], media: [], albums: [], tributes: [], tributeReplies: [], family: [], events: [], collaborators: [] });
+
+    setMemorials((prev) => [finalMemorial, ...prev]);
+    notify("success", "MEMORA creada con éxito", `El espacio conmemorativo de ${finalMemorial.personName} está listo.`);
+    return finalMemorial;
   };
 
   const updateMemorial = (id: string, updates: Partial<Memorial>) => {
     setMemorials((prev) =>
-      prev.map((m) =>
-        m.id === id
-          ? {
-              ...m,
-              ...updates,
-              updatedAt: new Date().toISOString(),
-            }
-          : m
-      )
+      prev.map((m) => (m.id === id ? { ...m, ...updates, updatedAt: new Date().toISOString() } : m))
     );
+
+    const row: Record<string, any> = {};
+    if (updates.personName !== undefined) row.person_name = updates.personName;
+    if (updates.preferredName !== undefined) row.preferred_name = updates.preferredName || null;
+    if (updates.birthDate !== undefined) row.birth_date = updates.birthDate || null;
+    if (updates.passingDate !== undefined) row.passing_date = updates.passingDate || null;
+    if (updates.birthPlace !== undefined) row.birth_place = updates.birthPlace || null;
+    if (updates.restingPlace !== undefined) row.resting_place = updates.restingPlace || null;
+    if (updates.mainPhoto !== undefined) row.main_photo = updates.mainPhoto;
+    if (updates.coverPhoto !== undefined) row.cover_photo = updates.coverPhoto;
+    if (updates.quote !== undefined) row.quote = updates.quote;
+    if (updates.summary !== undefined) row.summary = updates.summary;
+    if (updates.biography !== undefined) row.biography = updates.biography;
+    if (updates.privacy !== undefined) row.privacy = updates.privacy;
+    if (updates.status !== undefined) row.status = updates.status;
+    if (updates.planId !== undefined) row.plan_id = updates.planId;
+    if (updates.enableTributeAutoApproval !== undefined) row.enable_tribute_auto_approval = updates.enableTributeAutoApproval;
+    if (updates.backgroundMusicTitle !== undefined) row.background_music_title = updates.backgroundMusicTitle;
+    if (updates.backgroundMusicUrl !== undefined) row.background_music_url = updates.backgroundMusicUrl;
+    if (updates.qrCodeUrl !== undefined) row.qr_code_url = updates.qrCodeUrl;
+    if (updates.species !== undefined) row.species = updates.species;
+    if (updates.breed !== undefined) row.breed = updates.breed;
+    if (updates.personality !== undefined) row.personality = updates.personality;
+    if (updates.favoriteThings !== undefined) row.favorite_things = updates.favoriteThings;
+    if (updates.favoritePlace !== undefined) row.favorite_place = updates.favoritePlace;
+    if (updates.anecdote !== undefined) row.anecdote = updates.anecdote;
+    if (updates.arrivalStory !== undefined) row.arrival_story = updates.arrivalStory;
+    if (updates.specialTrait !== undefined) row.special_trait = updates.specialTrait;
+    if (updates.petMemoryQuote !== undefined) row.pet_memory_quote = updates.petMemoryQuote;
+
+    supabase.from("memorials").update(row).eq("id", id).then(({ error }) => {
+      if (error) notify("error", "No se pudo guardar en el servidor", error.message);
+    });
     notify("success", "Cambios guardados", "El memorial ha sido actualizado correctamente.");
   };
 
@@ -1012,6 +1055,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setSelectedMemorialId(null);
       setCurrentView("dashboard");
     }
+    supabase.from("memorials").delete().eq("id", id).then(({ error }) => {
+      if (error) notify("error", "No se pudo eliminar en el servidor", error.message);
+    });
     notify("info", "MEMORA eliminada", "El espacio y sus archivos han sido removidos, liberando almacenamiento.");
   };
 
@@ -1020,35 +1066,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     notify("success", "Memorial publicado", "Ahora puede ser compartido y visitado.");
   };
 
-  // Sub-resource Helpers
+  // Sub-resource Helpers — cada uno actualiza el estado local de inmediato y
+  // persiste en Supabase en segundo plano. El status real de un tributo lo
+  // decide siempre el trigger set_tribute_status en Postgres, no el cliente.
   const addTribute = async (
     memorialId: string,
     tributeData: Omit<Tribute, "id" | "createdAt" | "status">
   ) => {
-    const target = memorials.find((m) => m.id === memorialId);
-    const shouldAutoApprove = target ? target.enableTributeAutoApproval : true;
+    const { data: row, error } = await supabase
+      .from("tributes")
+      .insert({
+        memorial_id: memorialId,
+        author_name: tributeData.authorName,
+        author_email: tributeData.authorEmail || null,
+        relationship: tributeData.relationship || null,
+        message: tributeData.message,
+        photo_url: tributeData.photoUrl || null,
+        heart_count: 1,
+      })
+      .select()
+      .single();
 
-    const newTribute: Tribute = {
-      ...tributeData,
-      id: `tr-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-      createdAt: new Date().toISOString(),
-      status: shouldAutoApprove ? "approved" : "pending",
-      heartCount: 1,
-      replies: [],
-    };
+    if (error || !row) {
+      notify("error", "No se pudo enviar el homenaje", error?.message || "Intenta nuevamente.");
+      return;
+    }
 
+    const newTribute = mapTributeRow(row, []);
     setMemorials((prev) =>
-      prev.map((m) =>
-        m.id === memorialId
-          ? {
-              ...m,
-              tributes: [newTribute, ...m.tributes],
-            }
-          : m
-      )
+      prev.map((m) => (m.id === memorialId ? { ...m, tributes: [newTribute, ...m.tributes] } : m))
     );
 
-    if (shouldAutoApprove) {
+    if (newTribute.status === "approved") {
       notify("success", "Homenaje compartido", "Gracias por dedicar tus palabras y encender una luz en su memoria.");
     } else {
       notify("info", "Homenaje enviado", "Tu mensaje será publicado una vez revisado por los administradores.");
@@ -1064,20 +1113,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       prev.map((m) => {
         if (m.id !== memorialId) return m;
         if (action === "deleted") {
-          return {
-            ...m,
-            tributes: m.tributes.filter((t) => t.id !== tributeId),
-          };
+          return { ...m, tributes: m.tributes.filter((t) => t.id !== tributeId) };
         }
-        return {
-          ...m,
-          tributes: m.tributes.map((t) => (t.id === tributeId ? { ...t, status: action } : t)),
-        };
+        return { ...m, tributes: m.tributes.map((t) => (t.id === tributeId ? { ...t, status: action } : t)) };
       })
     );
+
+    const op =
+      action === "deleted"
+        ? supabase.from("tributes").delete().eq("id", tributeId)
+        : supabase.from("tributes").update({ status: action }).eq("id", tributeId);
+    op.then(({ error }) => {
+      if (error) notify("error", "No se pudo moderar en el servidor", error.message);
+    });
+
     notify("info", "Moderación completada", `El homenaje ha sido ${action === "approved" ? "aprobado" : action === "rejected" ? "rechazado" : "eliminado"}.`);
   };
 
+  // Usa la función react_to_tribute (SECURITY DEFINER) porque la política RLS
+  // de UPDATE en "tributes" solo permite escribir a owner/admin — reaccionar
+  // (corazón/vela/flor) debe poder hacerlo cualquier visitante que vea el memorial.
   const addTributeReaction = (memorialId: string, tributeId: string, type: "heart" | "candle" | "flower") => {
     setMemorials((prev) =>
       prev.map((m) => {
@@ -1094,6 +1149,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         };
       })
     );
+    supabase.rpc("react_to_tribute", { p_tribute_id: tributeId, p_reaction: type }).then(({ error }) => {
+      if (error) console.error("react_to_tribute failed:", error.message);
+    });
   };
 
   // Add Media Item with Shared-Bag Storage Limit Check
@@ -1125,51 +1183,72 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
-    const newItem: MediaItem = {
-      ...mediaData,
-      id: `m-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-      uploadedAt: new Date().toISOString(),
-      status: "approved",
-    };
+    const tempId = `pending-${Date.now()}`;
+    const optimisticItem: MediaItem = { ...mediaData, id: tempId, uploadedAt: new Date().toISOString(), status: "approved" };
+    setMemorials((prev) => prev.map((m) => (m.id === memorialId ? { ...m, media: [optimisticItem, ...m.media] } : m)));
 
-    setMemorials((prev) =>
-      prev.map((m) => {
-        if (m.id !== memorialId) return m;
-        return {
-          ...m,
-          media: [newItem, ...m.media],
-        };
+    supabase
+      .from("media_items")
+      .insert({
+        memorial_id: memorialId,
+        album_id: mediaData.albumId || null,
+        type: mediaData.type,
+        url: mediaData.url,
+        thumbnail_url: mediaData.thumbnailUrl || null,
+        title: mediaData.title || null,
+        description: mediaData.description || null,
+        date: mediaData.date || null,
+        album_title: mediaData.albumTitle || null,
+        tags: mediaData.tags || null,
+        uploader_name: mediaData.uploaderName,
+        uploader_email: mediaData.uploaderEmail || null,
       })
-    );
-    notify("success", "Archivo agregado", `Se ha añadido "${newItem.title || "un nuevo recuerdo"}" a la MEMORA.`);
+      .select()
+      .single()
+      .then(({ data: row, error }) => {
+        if (error || !row) {
+          notify("error", "No se pudo guardar el archivo", error?.message || "Intenta nuevamente.");
+          setMemorials((prev) => prev.map((m) => (m.id === memorialId ? { ...m, media: m.media.filter((it) => it.id !== tempId) } : m)));
+          return;
+        }
+        const realItem = mapMediaRow(row);
+        setMemorials((prev) => prev.map((m) => (m.id === memorialId ? { ...m, media: m.media.map((it) => (it.id === tempId ? realItem : it)) } : m)));
+      });
+
+    notify("success", "Archivo agregado", `Se ha añadido "${mediaData.title || "un nuevo recuerdo"}" a la MEMORA.`);
     return true;
   };
 
   const deleteMediaItem = (memorialId: string, mediaId: string) => {
     setMemorials((prev) =>
-      prev.map((m) => {
-        if (m.id !== memorialId) return m;
-        return {
-          ...m,
-          media: m.media.filter((item) => item.id !== mediaId),
-        };
-      })
+      prev.map((m) => (m.id === memorialId ? { ...m, media: m.media.filter((item) => item.id !== mediaId) } : m))
     );
+    supabase.from("media_items").delete().eq("id", mediaId).then(({ error }) => {
+      if (error) notify("error", "No se pudo eliminar en el servidor", error.message);
+    });
     notify("info", "Recuerdo eliminado", "El archivo ha sido removido del memorial, liberando espacio en tu bolsa.");
   };
 
   const createAlbum = (memorialId: string, title: string, description?: string, coverUrl?: string) => {
-    const newAlbum: Album = {
-      id: `alb-${Date.now()}`,
-      memorialId,
-      title,
-      description,
-      coverUrl: coverUrl || "https://images.unsplash.com/photo-1511895426328-dc8714191300?auto=format&fit=crop&w=600&q=80",
-      itemCount: 0,
-    };
-    setMemorials((prev) =>
-      prev.map((m) => (m.id === memorialId ? { ...m, albums: [...m.albums, newAlbum] } : m))
-    );
+    const tempId = `pending-${Date.now()}`;
+    const finalCoverUrl = coverUrl || "https://images.unsplash.com/photo-1511895426328-dc8714191300?auto=format&fit=crop&w=600&q=80";
+    const optimisticAlbum: Album = { id: tempId, memorialId, title, description, coverUrl: finalCoverUrl, itemCount: 0 };
+    setMemorials((prev) => prev.map((m) => (m.id === memorialId ? { ...m, albums: [...m.albums, optimisticAlbum] } : m)));
+
+    supabase
+      .from("albums")
+      .insert({ memorial_id: memorialId, title, description: description || null, cover_url: finalCoverUrl, item_count: 0 })
+      .select()
+      .single()
+      .then(({ data: row, error }) => {
+        if (error || !row) {
+          notify("error", "No se pudo crear el álbum", error?.message || "Intenta nuevamente.");
+          setMemorials((prev) => prev.map((m) => (m.id === memorialId ? { ...m, albums: m.albums.filter((a) => a.id !== tempId) } : m)));
+          return;
+        }
+        const realAlbum = mapAlbumRow(row);
+        setMemorials((prev) => prev.map((m) => (m.id === memorialId ? { ...m, albums: m.albums.map((a) => (a.id === tempId ? realAlbum : a)) } : m)));
+      });
     notify("success", "Álbum creado", `Álbum "${title}" listo para organizar recuerdos.`);
   };
 
@@ -1183,13 +1262,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return;
     }
 
-    const newEvent: TimelineEvent = {
-      ...eventData,
-      id: `t-${Date.now()}`,
-    };
-    setMemorials((prev) =>
-      prev.map((m) => (m.id === memorialId ? { ...m, timeline: [...m.timeline, newEvent] } : m))
-    );
+    const tempId = `pending-${Date.now()}`;
+    const optimisticEvent: TimelineEvent = { ...eventData, id: tempId };
+    setMemorials((prev) => prev.map((m) => (m.id === memorialId ? { ...m, timeline: [...m.timeline, optimisticEvent] } : m)));
+
+    supabase
+      .from("timeline_events")
+      .insert({
+        memorial_id: memorialId,
+        year: eventData.year,
+        date: eventData.date || null,
+        title: eventData.title,
+        description: eventData.description,
+        category: eventData.category,
+        photo_url: eventData.photoUrl || null,
+        location: eventData.location || null,
+      })
+      .select()
+      .single()
+      .then(({ data: row, error }) => {
+        if (error || !row) {
+          notify("error", "No se pudo guardar el hito", error?.message || "Intenta nuevamente.");
+          setMemorials((prev) => prev.map((m) => (m.id === memorialId ? { ...m, timeline: m.timeline.filter((e) => e.id !== tempId) } : m)));
+          return;
+        }
+        const realEvent = mapTimelineRow(row);
+        setMemorials((prev) => prev.map((m) => (m.id === memorialId ? { ...m, timeline: m.timeline.map((e) => (e.id === tempId ? realEvent : e)) } : m)));
+      });
     notify("success", "Hito agregado a la línea de tiempo", eventData.title);
   };
 
@@ -1197,6 +1296,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setMemorials((prev) =>
       prev.map((m) => (m.id === memorialId ? { ...m, timeline: m.timeline.filter((e) => e.id !== eventId) } : m))
     );
+    supabase.from("timeline_events").delete().eq("id", eventId).then(({ error }) => {
+      if (error) notify("error", "No se pudo eliminar en el servidor", error.message);
+    });
   };
 
   const addFamilyMember = (memorialId: string, memberData: Omit<FamilyMember, "id">) => {
@@ -1209,13 +1311,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return;
     }
 
-    const newMember: FamilyMember = {
-      ...memberData,
-      id: `fam-${Date.now()}`,
-    };
-    setMemorials((prev) =>
-      prev.map((m) => (m.id === memorialId ? { ...m, family: [...m.family, newMember] } : m))
-    );
+    const tempId = `pending-${Date.now()}`;
+    const optimisticMember: FamilyMember = { ...memberData, id: tempId };
+    setMemorials((prev) => prev.map((m) => (m.id === memorialId ? { ...m, family: [...m.family, optimisticMember] } : m)));
+
+    supabase
+      .from("family_members")
+      .insert({
+        memorial_id: memorialId,
+        name: memberData.name,
+        relationship: memberData.relationship,
+        photo_url: memberData.photoUrl || null,
+        birth_year: memberData.birthYear || null,
+        generation: memberData.generation || null,
+        notes: memberData.notes || null,
+      })
+      .select()
+      .single()
+      .then(({ data: row, error }) => {
+        if (error || !row) {
+          notify("error", "No se pudo agregar el familiar", error?.message || "Intenta nuevamente.");
+          setMemorials((prev) => prev.map((m) => (m.id === memorialId ? { ...m, family: m.family.filter((f) => f.id !== tempId) } : m)));
+          return;
+        }
+        const realMember = mapFamilyRow(row);
+        setMemorials((prev) => prev.map((m) => (m.id === memorialId ? { ...m, family: m.family.map((f) => (f.id === tempId ? realMember : f)) } : m)));
+      });
     notify("success", "Familiar agregado", `${memberData.name} (${memberData.relationship})`);
   };
 
@@ -1223,47 +1344,75 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setMemorials((prev) =>
       prev.map((m) => (m.id === memorialId ? { ...m, family: m.family.filter((f) => f.id !== memberId) } : m))
     );
+    supabase.from("family_members").delete().eq("id", memberId).then(({ error }) => {
+      if (error) notify("error", "No se pudo eliminar en el servidor", error.message);
+    });
   };
 
   const addEvent = (memorialId: string, eventData: Omit<MemorialEvent, "id" | "rsvpCount">) => {
-    const newEvent: MemorialEvent = {
-      ...eventData,
-      id: `ev-${Date.now()}`,
-      rsvpCount: 1,
-    };
-    setMemorials((prev) =>
-      prev.map((m) => (m.id === memorialId ? { ...m, events: [...m.events, newEvent] } : m))
-    );
+    const tempId = `pending-${Date.now()}`;
+    const optimisticEvent: MemorialEvent = { ...eventData, id: tempId, rsvpCount: 1 };
+    setMemorials((prev) => prev.map((m) => (m.id === memorialId ? { ...m, events: [...m.events, optimisticEvent] } : m)));
+
+    supabase
+      .from("memorial_events")
+      .insert({
+        memorial_id: memorialId,
+        title: eventData.title,
+        type: eventData.type,
+        date: eventData.date,
+        time: eventData.time,
+        location_name: eventData.locationName,
+        address: eventData.address || null,
+        virtual_link: eventData.virtualLink || null,
+        description: eventData.description || null,
+        rsvp_count: 1,
+      })
+      .select()
+      .single()
+      .then(({ data: row, error }) => {
+        if (error || !row) {
+          notify("error", "No se pudo agregar el evento", error?.message || "Intenta nuevamente.");
+          setMemorials((prev) => prev.map((m) => (m.id === memorialId ? { ...m, events: m.events.filter((e) => e.id !== tempId) } : m)));
+          return;
+        }
+        const realEvent = mapEventRow(row);
+        setMemorials((prev) => prev.map((m) => (m.id === memorialId ? { ...m, events: m.events.map((e) => (e.id === tempId ? realEvent : e)) } : m)));
+      });
     notify("success", "Ceremonia o evento añadido", eventData.title);
   };
 
   const inviteCollaborator = (memorialId: string, name: string, email: string, role: any) => {
-    const newCollab: Collaborator = {
-      id: `col-${Date.now()}`,
-      memorialId,
-      name,
-      email,
-      role,
-      status: "active",
-      invitedAt: new Date().toISOString(),
-    };
-    setMemorials((prev) =>
-      prev.map((m) => (m.id === memorialId ? { ...m, collaborators: [...m.collaborators, newCollab] } : m))
-    );
+    const tempId = `pending-${Date.now()}`;
+    const optimisticCollab: Collaborator = { id: tempId, memorialId, name, email, role, status: "active", invitedAt: new Date().toISOString() };
+    setMemorials((prev) => prev.map((m) => (m.id === memorialId ? { ...m, collaborators: [...m.collaborators, optimisticCollab] } : m)));
+
+    supabase
+      .from("collaborators")
+      .insert({ memorial_id: memorialId, name, email, role, status: "active" })
+      .select()
+      .single()
+      .then(({ data: row, error }) => {
+        if (error || !row) {
+          notify("error", "No se pudo invitar al colaborador", error?.message || "Intenta nuevamente.");
+          setMemorials((prev) => prev.map((m) => (m.id === memorialId ? { ...m, collaborators: m.collaborators.filter((c) => c.id !== tempId) } : m)));
+          return;
+        }
+        const realCollab = mapCollaboratorRow(row);
+        setMemorials((prev) => prev.map((m) => (m.id === memorialId ? { ...m, collaborators: m.collaborators.map((c) => (c.id === tempId ? realCollab : c)) } : m)));
+      });
     notify("success", "Invitación enviada", `Se ha asignado el rol de ${role} a ${name} (${email}).`);
   };
 
   const removeCollaborator = (memorialId: string, collaboratorId: string) => {
     setMemorials((prev) =>
       prev.map((m) =>
-        m.id === memorialId
-          ? {
-              ...m,
-              collaborators: m.collaborators.filter((c) => c.id !== collaboratorId),
-            }
-          : m
+        m.id === memorialId ? { ...m, collaborators: m.collaborators.filter((c) => c.id !== collaboratorId) } : m
       )
     );
+    supabase.from("collaborators").delete().eq("id", collaboratorId).then(({ error }) => {
+      if (error) notify("error", "No se pudo eliminar en el servidor", error.message);
+    });
   };
 
   // AI Story Assistant invocation
@@ -1391,6 +1540,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       priceCLP: planConfig.priceMonthlyCLP,
     };
 
+    // TODO(Fase 5): igual que el retorno de Flow — activación local únicamente
+    // hasta que exista una escritura server-side autoritativa para este flujo.
     if (currentUser) {
       const updatedUser: User = {
         ...currentUser,
@@ -1398,11 +1549,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         subscription: newSub,
       };
       setCurrentUser(updatedUser);
-      setRegisteredAccounts((prev) =>
-        prev.map((a) =>
-          a.id === currentUser.id ? { ...a, currentPlan: normalizedPlan, subscription: newSub } : a
-        )
-      );
     }
 
     if (memorialId) {
@@ -1443,7 +1589,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const metrics: PlatformMetric = {
     totalMemorials: memorials.length,
     publishedMemorials: memorials.filter((m) => m.status === "published").length,
-    totalUsers: 142,
+    totalUsers: platformUserCount,
     totalTributes: totalTributes + 84,
     totalPhotosUploaded: totalPhotosUploaded + 320,
     revenueTotalUSD: revenueTotalUSD + 1890,
@@ -1467,13 +1613,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         currentUser,
         isAuthenticated: !!currentUser,
-        registeredAccounts,
+        authLoading,
         userUsage,
         login,
         register,
         googleLogin,
         requestPasswordReset,
-        resetPasswordWithCode,
+        confirmPasswordReset,
         updateUserProfile,
         changePassword,
         logout,
@@ -1483,6 +1629,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setAuthModalMode,
 
         memorials,
+        memorialsLoading,
         currentMemorial,
         createMemorial,
         updateMemorial,

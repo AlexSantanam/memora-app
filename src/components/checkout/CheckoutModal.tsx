@@ -5,7 +5,6 @@ import { PlanTier } from "../../types";
 import {
   X,
   Check,
-  ShieldCheck,
   CreditCard,
   Lock,
   Loader2,
@@ -14,7 +13,6 @@ import {
   Building2,
   Smartphone,
   Wallet,
-  MessageCircle,
 } from "lucide-react";
 import confetti from "canvas-confetti";
 import { WhatsAppButton } from "../whatsapp/WhatsAppButton";
@@ -27,18 +25,9 @@ interface CheckoutModalProps {
 
 export const CheckoutModal: React.FC<CheckoutModalProps> = ({ planId, memorialId, onClose }) => {
   const { completePaymentSimulation, notify, currentUser } = useApp();
-  
-  const [paymentGateway, setPaymentGateway] = useState<"flow" | "card">("flow");
-  
-  // Card Form states (International / Simulation)
-  const [cardNumber, setCardNumber] = useState("4242 •••• •••• 4242");
-  const [cardExp, setCardExp] = useState("12/28");
-  const [cardCvc, setCardCvc] = useState("888");
-  const [cardHolder, setCardHolder] = useState(currentUser?.name || "Familia Memora");
-  
+
   // Flow State
   const [isFlowLoading, setIsFlowLoading] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
   const [isDone, setIsDone] = useState(false);
 
   const plan = DEFAULT_PLANS.find((p) => p.id === planId) || DEFAULT_PLANS[1];
@@ -92,33 +81,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ planId, memorialId
       }
     } catch (err: any) {
       setIsFlowLoading(false);
-      console.warn("Flow payment initialization message:", err?.message);
-      notify("warning", "Conectando con Flow", "Utilizando simulación segura para pruebas locales.");
-      // Fallback to simulation
-      setPaymentGateway("card");
-    }
-  };
-
-  const handleCardPay = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsProcessing(true);
-
-    try {
-      await completePaymentSimulation(planId, memorialId);
-      setIsProcessing(false);
-      setIsDone(true);
-      confetti({
-        particleCount: 80,
-        spread: 60,
-        origin: { y: 0.6 },
-        colors: ["#C5A880", "#7A4E38", "#24201D"],
-      });
-      setTimeout(() => {
-        onClose();
-      }, 2200);
-    } catch (err) {
-      setIsProcessing(false);
-      notify("error", "Error procesando el pago", "Intenta de nuevo.");
+      console.error("Flow payment initialization failed:", err?.message);
+      notify("error", "No se pudo conectar con Flow", "Intenta nuevamente en unos minutos o contáctanos por WhatsApp.");
     }
   };
 
@@ -175,35 +139,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ planId, memorialId
               ))}
             </div>
 
-            {/* Gateway Selection Tabs */}
-            <div className="grid grid-cols-2 p-1 bg-[#FAF7F2] rounded-2xl border border-[#EAE3D9] text-xs font-medium">
-              <button
-                type="button"
-                onClick={() => setPaymentGateway("flow")}
-                className={`py-2.5 px-3 rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer ${
-                  paymentGateway === "flow"
-                    ? "bg-white text-[#24201D] shadow-xs font-semibold"
-                    : "text-[#8C827A] hover:text-[#24201D]"
-                }`}
-              >
-                <span>🇨🇱 Flow (Webpay / Tarjetas)</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setPaymentGateway("card")}
-                className={`py-2.5 px-3 rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer ${
-                  paymentGateway === "card"
-                    ? "bg-white text-[#24201D] shadow-xs font-semibold"
-                    : "text-[#8C827A] hover:text-[#24201D]"
-                }`}
-              >
-                <span>🌐 Tarjeta Internacional</span>
-              </button>
-            </div>
-
-            {/* FLOW PAYMENT OPTION */}
-            {paymentGateway === "flow" && (
-              <div className="space-y-4 animate-in fade-in duration-200">
+            {/* FLOW PAYMENT (Webpay / Redcompra / MACH / Servipag — Chile) */}
+            <div className="space-y-4 animate-in fade-in duration-200">
                 <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200/80 space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-semibold text-[#24201D]">
@@ -258,85 +195,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ planId, memorialId
                   )}
                 </button>
               </div>
-            )}
 
-            {/* INTERNATIONAL CARD FORM */}
-            {paymentGateway === "card" && (
-              <form onSubmit={handleCardPay} className="space-y-3 text-xs animate-in fade-in duration-200">
-                <div className="flex items-center gap-2.5 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs mb-3">
-                  <ShieldCheck className="w-4 h-4 text-amber-700 flex-shrink-0" />
-                  <span>
-                    <strong>Tarjetas Internacionales:</strong> Visa, Mastercard y American Express en USD.
-                  </span>
-                </div>
-
-                <div>
-                  <label className="block font-semibold text-[#24201D] mb-1">Nombre del titular</label>
-                  <input
-                    type="text"
-                    required
-                    value={cardHolder}
-                    onChange={(e) => setCardHolder(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#D8CEBE] text-xs text-[#24201D]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-semibold text-[#24201D] mb-1">Número de Tarjeta</label>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      required
-                      value={cardNumber}
-                      onChange={(e) => setCardNumber(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#D8CEBE] text-xs text-[#24201D] pl-10"
-                    />
-                    <CreditCard className="w-4 h-4 text-stone-400 absolute left-3 top-3" />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block font-semibold text-[#24201D] mb-1">Vencimiento</label>
-                    <input
-                      type="text"
-                      required
-                      value={cardExp}
-                      onChange={(e) => setCardExp(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#D8CEBE] text-xs text-[#24201D]"
-                    />
-                  </div>
-                  <div>
-                    <label className="block font-semibold text-[#24201D] mb-1">CVC</label>
-                    <input
-                      type="text"
-                      required
-                      value={cardCvc}
-                      onChange={(e) => setCardCvc(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#D8CEBE] text-xs text-[#24201D]"
-                    />
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={isProcessing}
-                  className="w-full py-3.5 rounded-full bg-[#24201D] text-white hover:bg-[#3D3530] text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 transition-all shadow-md active:scale-[0.98] disabled:opacity-50 mt-4 cursor-pointer"
-                >
-                  {isProcessing ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin text-[#C5A880]" />
-                      <span>Verificando y activando...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Lock className="w-3.5 h-3.5 text-[#C5A880]" />
-                      <span>Confirmar Pago de ${plan.price} USD</span>
-                    </>
-                  )}
-                </button>
-              </form>
-            )}
             {/* Discrete WhatsApp Help for Payments */}
             <div className="pt-4 border-t border-[#EAE3D9] flex items-center justify-between text-xs">
               <span className="text-[#7A7067]">¿Dudas con el pago o necesitas asistencia?</span>

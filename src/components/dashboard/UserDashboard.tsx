@@ -1,6 +1,7 @@
 import React, { useState, useRef } from "react";
 import { useApp } from "../../context/AppContext";
 import { Memorial } from "../../types";
+import { uploadAvatar } from "../../lib/uploadFile";
 import {
   Heart,
   Plus,
@@ -810,19 +811,19 @@ export const UserDashboard: React.FC = () => {
                   ref={avatarFileInputRef}
                   accept="image/*"
                   className="hidden"
-                  onChange={(e) => {
+                  onChange={async (e) => {
                     const file = e.target.files?.[0];
-                    if (file) {
-                      if (file.size > 10 * 1024 * 1024) {
-                        notify("warning", "Imagen muy pesada", "El archivo debe pesar menos de 10MB.");
-                        return;
-                      }
-                      const reader = new FileReader();
-                      reader.onload = (event) => {
-                        setEditAvatar(event.target?.result as string);
-                        notify("info", "Foto seleccionada", "Guarda los cambios para actualizar tu perfil.");
-                      };
-                      reader.readAsDataURL(file);
+                    if (!file || !currentUser) return;
+                    if (file.size > 10 * 1024 * 1024) {
+                      notify("warning", "Imagen muy pesada", "El archivo debe pesar menos de 10MB.");
+                      return;
+                    }
+                    try {
+                      const url = await uploadAvatar(currentUser.id, file);
+                      setEditAvatar(url);
+                      notify("info", "Foto seleccionada", "Guarda los cambios para actualizar tu perfil.");
+                    } catch (err: any) {
+                      notify("error", "No se pudo subir la foto", err?.message || "Intenta nuevamente.");
                     }
                   }}
                 />

@@ -22,8 +22,7 @@ function AppContent() {
   const {
     currentView,
     isAuthModalOpen,
-    setIsAuthModalOpen,
-    authModalMode,
+    authLoading,
     selectedPlanForCheckout,
     setSelectedPlanForCheckout,
     targetMemorialForCheckout,
@@ -32,6 +31,16 @@ function AppContent() {
     activePrintableMemorial,
     setActivePrintableMemorial,
   } = useApp();
+
+  // Avoid flashing the logged-out landing page for the brief moment it takes
+  // to hydrate the Supabase session on first load.
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#FAF7F2]">
+        <div className="w-8 h-8 border-2 border-[#C5A880] border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-[#FAF7F2] text-[#24201D] font-sans antialiased selection:bg-[#C5A880]/30 selection:text-[#24201D]">
@@ -58,12 +67,7 @@ function AppContent() {
       <Toasts />
 
       {/* Global Authentication Modal */}
-      {isAuthModalOpen && (
-        <AuthModal
-          initialMode={authModalMode}
-          onClose={() => setIsAuthModalOpen(false)}
-        />
-      )}
+      {isAuthModalOpen && <AuthModal />}
 
       {/* Global Checkout / Upgrade Modal */}
       {selectedPlanForCheckout && (

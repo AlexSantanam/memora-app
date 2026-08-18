@@ -1,6 +1,7 @@
 import React, { useState, useRef } from "react";
 import { useApp } from "../../context/AppContext";
 import { Memorial, PrivacyLevel, PlanTier, TimelineEvent, FamilyMember, MemorialEvent, Collaborator } from "../../types";
+import { uploadMemorialAsset } from "../../lib/uploadFile";
 import {
   Save,
   ArrowLeft,
@@ -536,22 +537,19 @@ export const MemorialEdit: React.FC = () => {
                 ref={editMainPhotoRef}
                 accept="image/*"
                 className="hidden"
-                onChange={(e) => {
+                onChange={async (e) => {
                   const file = e.target.files?.[0];
-                  if (file) {
-                    if (file.size > 15 * 1024 * 1024) {
-                      notify("warning", "Imagen muy pesada", "El archivo debe pesar menos de 15MB.");
-                      return;
-                    }
-                    const reader = new FileReader();
-                    reader.onload = (event) => {
-                      setFormData((prev) => ({
-                        ...prev,
-                        mainPhoto: event.target?.result as string,
-                      }));
-                      notify("success", "Foto actualizada", "Has cargado un nuevo retrato.");
-                    };
-                    reader.readAsDataURL(file);
+                  if (!file || !currentMemorial) return;
+                  if (file.size > 15 * 1024 * 1024) {
+                    notify("warning", "Imagen muy pesada", "El archivo debe pesar menos de 15MB.");
+                    return;
+                  }
+                  try {
+                    const url = await uploadMemorialAsset(currentMemorial.id, "main", file);
+                    setFormData((prev) => ({ ...prev, mainPhoto: url }));
+                    notify("success", "Foto actualizada", "Has cargado un nuevo retrato.");
+                  } catch (err: any) {
+                    notify("error", "No se pudo subir la foto", err?.message || "Intenta nuevamente.");
                   }
                 }}
               />
@@ -561,22 +559,19 @@ export const MemorialEdit: React.FC = () => {
                 ref={editCoverPhotoRef}
                 accept="image/*"
                 className="hidden"
-                onChange={(e) => {
+                onChange={async (e) => {
                   const file = e.target.files?.[0];
-                  if (file) {
-                    if (file.size > 20 * 1024 * 1024) {
-                      notify("warning", "Imagen muy pesada", "El archivo debe pesar menos de 20MB.");
-                      return;
-                    }
-                    const reader = new FileReader();
-                    reader.onload = (event) => {
-                      setFormData((prev) => ({
-                        ...prev,
-                        coverPhoto: event.target?.result as string,
-                      }));
-                      notify("success", "Portada actualizada", "Has cargado una nueva portada.");
-                    };
-                    reader.readAsDataURL(file);
+                  if (!file || !currentMemorial) return;
+                  if (file.size > 20 * 1024 * 1024) {
+                    notify("warning", "Imagen muy pesada", "El archivo debe pesar menos de 20MB.");
+                    return;
+                  }
+                  try {
+                    const url = await uploadMemorialAsset(currentMemorial.id, "cover", file);
+                    setFormData((prev) => ({ ...prev, coverPhoto: url }));
+                    notify("success", "Portada actualizada", "Has cargado una nueva portada.");
+                  } catch (err: any) {
+                    notify("error", "No se pudo subir la foto", err?.message || "Intenta nuevamente.");
                   }
                 }}
               />
@@ -941,19 +936,19 @@ export const MemorialEdit: React.FC = () => {
                   ref={editGalleryPhotoRef}
                   accept="image/*"
                   className="hidden"
-                  onChange={(e) => {
+                  onChange={async (e) => {
                     const file = e.target.files?.[0];
-                    if (file) {
-                      if (file.size > 15 * 1024 * 1024) {
-                        notify("warning", "Imagen muy pesada", "El archivo debe pesar menos de 15MB.");
-                        return;
-                      }
-                      const reader = new FileReader();
-                      reader.onload = (event) => {
-                        setNewPhotoUrl(event.target?.result as string);
-                        notify("info", "Imagen cargada", "Completa el título y presiona 'Subir Fotografía'.");
-                      };
-                      reader.readAsDataURL(file);
+                    if (!file || !currentMemorial) return;
+                    if (file.size > 15 * 1024 * 1024) {
+                      notify("warning", "Imagen muy pesada", "El archivo debe pesar menos de 15MB.");
+                      return;
+                    }
+                    try {
+                      const url = await uploadMemorialAsset(currentMemorial.id, "gallery", file);
+                      setNewPhotoUrl(url);
+                      notify("info", "Imagen cargada", "Completa el título y presiona 'Subir Fotografía'.");
+                    } catch (err: any) {
+                      notify("error", "No se pudo subir la foto", err?.message || "Intenta nuevamente.");
                     }
                   }}
                 />

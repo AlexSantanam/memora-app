@@ -31,8 +31,7 @@ export const AuthModal: React.FC = () => {
     register,
     googleLogin,
     requestPasswordReset,
-    resetPasswordWithCode,
-    registeredAccounts,
+    confirmPasswordReset,
   } = useApp();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -43,16 +42,16 @@ export const AuthModal: React.FC = () => {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [selectedAvatar, setSelectedAvatar] = useState("");
+  const [selectedAvatarFile, setSelectedAvatarFile] = useState<File | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  
-  // Password Reset state
-  const [resetStep, setResetStep] = useState<"request" | "verify">("request");
-  const [resetCode, setResetCode] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [sentCodeHint, setSentCodeHint] = useState<string | null>(null);
 
-  const GOOGLE_CLIENT_ID = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID as string | undefined;
+  // Password Reset state — a real email is sent by Supabase with a secure
+  // link; there is no code to type in. "reset-confirm" mode (a separate
+  // screen below) is opened automatically once the user comes back via that link.
+  const [resetRequested, setResetRequested] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
 
   // Feedback & Loading
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -82,13 +81,12 @@ export const AuthModal: React.FC = () => {
     setSuccessMessage(null);
     setPassword("");
     setConfirmPassword("");
-    setResetStep("request");
-    setResetCode("");
+    setResetRequested(false);
     setNewPassword("");
-    setSentCodeHint(null);
+    setConfirmNewPassword("");
   };
 
-  const handleSwitchMode = (mode: "login" | "register" | "forgot") => {
+  const handleSwitchMode = (mode: "login" | "register" | "forgot" | "reset-confirm") => {
     resetFormState();
     setAuthModalMode(mode);
   };
@@ -112,37 +110,34 @@ export const AuthModal: React.FC = () => {
           return;
         }
 
-        const result = await register(name, email, password, selectedAvatar);
+        const result = await register(name, email, password, selectedAvatarFile || undefined);
         if (!result.success) {
           setErrorMessage(result.error || "No se pudo crear la cuenta.");
         }
-      } else {
-        // Forgot password flow
-        if (resetStep === "request") {
-          const result = await requestPasswordReset(email);
-          if (result.success) {
-            setSuccessMessage(result.message);
-            if (result.resetCode) {
-              setSentCodeHint(result.resetCode);
-              setResetCode(result.resetCode);
-            }
-            setResetStep("verify");
-          } else {
-            setErrorMessage(result.message);
-          }
+      } else if (authModalMode === "forgot") {
+        const result = await requestPasswordReset(email);
+        if (result.success) {
+          setSuccessMessage(result.message);
+          setResetRequested(true);
         } else {
-          // Verify & set new password
-          const result = await resetPasswordWithCode(email, resetCode, newPassword);
-          if (result.success) {
-            setSuccessMessage("¡Contraseña restablecida con éxito! Ya puedes ingresar.");
-            setTimeout(() => {
-              setAuthModalMode("login");
-              setPassword(newPassword);
-              resetFormState();
-            }, 1200);
-          } else {
-            setErrorMessage(result.error || "Código o datos inválidos.");
-          }
+          setErrorMessage(result.message);
+        }
+      } else {
+        // reset-confirm: user arrived via the email link, just needs to set a new password
+        if (newPassword !== confirmNewPassword) {
+          setErrorMessage("Las contraseñas no coinciden.");
+          setLoading(false);
+          return;
+        }
+        const result = await confirmPasswordReset(newPassword);
+        if (result.success) {
+          setSuccessMessage("¡Contraseña restablecida con éxito!");
+          setTimeout(() => {
+            setIsAuthModalOpen(false);
+            resetFormState();
+          }, 1200);
+        } else {
+          setErrorMessage(result.error || "No se pudo restablecer la contraseña.");
         }
       }
     } finally {
@@ -150,62 +145,17 @@ export const AuthModal: React.FC = () => {
     }
   };
 
-  // Real Google OAuth: opens Google's own consent popup, then verifies the
-  // account directly against Google's userinfo endpoint (no unverified input).
-  const handleGoogleOAuthLogin = () => {
+  // Redirige a Google (Supabase Auth) — el navegador navega a Google y vuelve
+  // a MEMORA; la sesión se completa automáticamente al volver (ver AppContext).
+  const handleGoogleLogin = async () => {
     setErrorMessage(null);
-
-    if (!GOOGLE_CLIENT_ID) {
-      setErrorMessage("El inicio de sesión con Google aún no está configurado en este entorno.");
-      return;
-    }
-
-    const google = (window as any).google;
-    if (!google?.accounts?.oauth2) {
-      setErrorMessage("No se pudo cargar Google. Verifica tu conexión e intenta de nuevo.");
-      return;
-    }
-
     setLoading(true);
-    const tokenClient = google.accounts.oauth2.initTokenClient({
-      client_id: GOOGLE_CLIENT_ID,
-      scope: "openid email profile",
-      callback: async (tokenResponse: any) => {
-        try {
-          if (!tokenResponse?.access_token) {
-            throw new Error("No se recibió autorización de Google.");
-          }
-          const res = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
-            headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
-          });
-          if (!res.ok) throw new Error("No se pudo verificar la cuenta de Google.");
-          const profile = await res.json();
-
-          const result = await googleLogin({
-            email: profile.email,
-            name: profile.name,
-            avatarUrl: profile.picture,
-          });
-
-          if (result.success) {
-            setIsAuthModalOpen(false);
-          } else {
-            setErrorMessage(result.error || "No se pudo iniciar sesión con Google.");
-          }
-        } catch (err: any) {
-          setErrorMessage(err?.message || "Error al conectar con Google.");
-        } finally {
-          setLoading(false);
-        }
-      },
-      error_callback: (err: any) => {
-        setLoading(false);
-        if (err?.type !== "popup_closed") {
-          setErrorMessage("La autorización con Google fue cancelada o falló.");
-        }
-      },
-    });
-    tokenClient.requestAccessToken();
+    const result = await googleLogin();
+    if (!result.success) {
+      setErrorMessage(result.error || "No se pudo iniciar sesión con Google.");
+      setLoading(false);
+    }
+    // On success the browser is navigating away — no further action needed here.
   };
 
   return (
@@ -229,6 +179,8 @@ export const AuthModal: React.FC = () => {
                   ? "Bienvenido a tu espacio"
                   : authModalMode === "register"
                   ? "Crea tu cuenta familiar"
+                  : authModalMode === "reset-confirm"
+                  ? "Elige tu nueva contraseña"
                   : "Recuperar contraseña"}
               </h3>
               <p className="text-xs text-[#5C534B]">
@@ -236,7 +188,9 @@ export const AuthModal: React.FC = () => {
                   ? "Ingresa para administrar los memoriales y recuerdos de tu familia."
                   : authModalMode === "register"
                   ? "Comienza a construir un legado para siempre en pocos minutos."
-                  : "Ingresa tu correo y te enviaremos el código seguro para restablecerla."}
+                  : authModalMode === "reset-confirm"
+                  ? "Ya verificamos tu identidad mediante el link de tu correo."
+                  : "Ingresa tu correo y te enviaremos un link seguro para restablecerla."}
               </p>
             </div>
 
@@ -256,11 +210,11 @@ export const AuthModal: React.FC = () => {
             )}
 
             {/* Google One-Click Login Button */}
-            {authModalMode !== "forgot" && (
+            {(authModalMode === "login" || authModalMode === "register") && (
               <div className="space-y-4 mb-6">
                 <button
                   type="button"
-                  onClick={handleGoogleOAuthLogin}
+                  onClick={handleGoogleLogin}
                   disabled={loading}
                   className="w-full py-3 px-4 rounded-2xl border border-[#D8CEBE] hover:border-[#C5A880] bg-white hover:bg-[#FAF7F2] text-xs font-semibold text-[#24201D] flex items-center justify-center gap-3 transition-all shadow-xs cursor-pointer active:scale-[0.99] disabled:opacity-50"
                   id="google-signin-button"
@@ -335,11 +289,8 @@ export const AuthModal: React.FC = () => {
                             setErrorMessage("La imagen debe ser menor a 10MB");
                             return;
                           }
-                          const reader = new FileReader();
-                          reader.onload = (event) => {
-                            setSelectedAvatar(event.target?.result as string);
-                          };
-                          reader.readAsDataURL(file);
+                          setSelectedAvatarFile(file);
+                          setSelectedAvatar(URL.createObjectURL(file));
                         }
                       }}
                     />
@@ -356,6 +307,7 @@ export const AuthModal: React.FC = () => {
                             type="button"
                             onClick={() => {
                               setSelectedAvatar("");
+                              setSelectedAvatarFile(null);
                               if (fileInputRef.current) fileInputRef.current.value = "";
                             }}
                             className="absolute -top-1 -right-1 p-1 bg-red-600 text-white rounded-full hover:bg-red-700 transition-colors shadow-xs"
@@ -388,26 +340,28 @@ export const AuthModal: React.FC = () => {
                 </>
               )}
 
-              {/* COMMON: Email input */}
-              <div>
-                <label className="block text-xs font-semibold text-[#24201D] uppercase tracking-wider mb-1">
-                  Correo electrónico
-                </label>
-                <div className="relative">
-                  <Mail className="w-4 h-4 text-[#8C827A] absolute left-3.5 top-3.5" />
-                  <input
-                    type="email"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="tu.correo@ejemplo.com"
-                    className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#D8CEBE] text-xs text-[#24201D] focus:outline-none focus:border-[#C5A880]"
-                  />
+              {/* COMMON: Email input (not shown for reset-confirm, or once the reset email was already requested) */}
+              {authModalMode !== "reset-confirm" && !(authModalMode === "forgot" && resetRequested) && (
+                <div>
+                  <label className="block text-xs font-semibold text-[#24201D] uppercase tracking-wider mb-1">
+                    Correo electrónico
+                  </label>
+                  <div className="relative">
+                    <Mail className="w-4 h-4 text-[#8C827A] absolute left-3.5 top-3.5" />
+                    <input
+                      type="email"
+                      required
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="tu.correo@ejemplo.com"
+                      className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#D8CEBE] text-xs text-[#24201D] focus:outline-none focus:border-[#C5A880]"
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* LOGIN & REGISTER: Password input */}
-              {authModalMode !== "forgot" && (
+              {(authModalMode === "login" || authModalMode === "register") && (
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <label className="block text-xs font-semibold text-[#24201D] uppercase tracking-wider">
@@ -491,35 +445,19 @@ export const AuthModal: React.FC = () => {
                 </div>
               )}
 
-              {/* FORGOT PASSWORD: STEP 2 (Verify code & new password) */}
-              {authModalMode === "forgot" && resetStep === "verify" && (
-                <div className="space-y-4 pt-2 border-t border-[#EAE3D9]">
-                  {sentCodeHint && (
-                    <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 space-y-1">
-                      <span className="font-semibold block">Código de recuperación generado:</span>
-                      <span className="font-mono text-base font-bold tracking-widest text-[#7A4E38]">
-                        {sentCodeHint}
-                      </span>
-                    </div>
-                  )}
+              {/* FORGOT PASSWORD: confirmation that a real email was sent */}
+              {authModalMode === "forgot" && resetRequested && (
+                <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex items-start gap-2.5">
+                  <Mail className="w-4 h-4 text-amber-700 flex-shrink-0 mt-0.5" />
+                  <span className="leading-snug">
+                    Revisa tu bandeja de entrada (y spam) y haz clic en el link para elegir una nueva contraseña.
+                  </span>
+                </div>
+              )}
 
-                  <div>
-                    <label className="block text-xs font-semibold text-[#24201D] uppercase tracking-wider mb-1">
-                      Código de 6 dígitos
-                    </label>
-                    <div className="relative">
-                      <KeyRound className="w-4 h-4 text-[#8C827A] absolute left-3.5 top-3.5" />
-                      <input
-                        type="text"
-                        required
-                        value={resetCode}
-                        onChange={(e) => setResetCode(e.target.value)}
-                        placeholder="Ej. 849201"
-                        className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#D8CEBE] font-mono text-xs text-[#24201D] focus:outline-none focus:border-[#C5A880]"
-                      />
-                    </div>
-                  </div>
-
+              {/* RESET-CONFIRM: new password after clicking the email link */}
+              {authModalMode === "reset-confirm" && (
+                <div className="space-y-4">
                   <div>
                     <label className="block text-xs font-semibold text-[#24201D] uppercase tracking-wider mb-1">
                       Nueva Contraseña
@@ -536,54 +474,74 @@ export const AuthModal: React.FC = () => {
                       />
                     </div>
                   </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-[#24201D] uppercase tracking-wider mb-1">
+                      Confirmar Nueva Contraseña
+                    </label>
+                    <div className="relative">
+                      <Lock className="w-4 h-4 text-[#8C827A] absolute left-3.5 top-3.5" />
+                      <input
+                        type="password"
+                        required
+                        value={confirmNewPassword}
+                        onChange={(e) => setConfirmNewPassword(e.target.value)}
+                        placeholder="Repite tu nueva contraseña"
+                        className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#D8CEBE] text-xs text-[#24201D] focus:outline-none focus:border-[#C5A880]"
+                      />
+                    </div>
+                  </div>
                 </div>
               )}
 
               {/* Submit Button */}
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-3 rounded-full bg-[#24201D] text-white hover:bg-[#3D3530] text-xs font-semibold flex items-center justify-center gap-2 transition-all shadow-md active:scale-[0.98] cursor-pointer disabled:opacity-50"
-              >
-                <span>
-                  {authModalMode === "login"
-                    ? "Iniciar Sesión"
-                    : authModalMode === "register"
-                    ? "Crear mi Cuenta Independiente"
-                    : resetStep === "request"
-                    ? "Solicitar Código de Recuperación"
-                    : "Guardar Nueva Contraseña"}
-                </span>
-                <ArrowRight className="w-4 h-4 text-[#C5A880]" />
-              </button>
+              {!(authModalMode === "forgot" && resetRequested) && (
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-3 rounded-full bg-[#24201D] text-white hover:bg-[#3D3530] text-xs font-semibold flex items-center justify-center gap-2 transition-all shadow-md active:scale-[0.98] cursor-pointer disabled:opacity-50"
+                >
+                  <span>
+                    {authModalMode === "login"
+                      ? "Iniciar Sesión"
+                      : authModalMode === "register"
+                      ? "Crear mi Cuenta Independiente"
+                      : authModalMode === "reset-confirm"
+                      ? "Guardar Nueva Contraseña"
+                      : "Enviar Link de Recuperación"}
+                  </span>
+                  <ArrowRight className="w-4 h-4 text-[#C5A880]" />
+                </button>
+              )}
             </form>
 
             {/* Switch mode links */}
-            <div className="mt-6 pt-4 border-t border-[#F4EFEA] text-center text-xs text-[#5C534B] space-y-2">
-              {authModalMode === "login" ? (
-                <p>
-                  ¿Aún no tienes cuenta?{" "}
-                  <button
-                    type="button"
-                    onClick={() => handleSwitchMode("register")}
-                    className="text-[#7A4E38] font-semibold hover:underline cursor-pointer"
-                  >
-                    Regístrate gratis
-                  </button>
-                </p>
-              ) : (
-                <p>
-                  ¿Ya tienes cuenta?{" "}
-                  <button
-                    type="button"
-                    onClick={() => handleSwitchMode("login")}
-                    className="text-[#7A4E38] font-semibold hover:underline cursor-pointer"
-                  >
-                    Inicia sesión aquí
-                  </button>
-                </p>
-              )}
-            </div>
+            {authModalMode !== "reset-confirm" && (
+              <div className="mt-6 pt-4 border-t border-[#F4EFEA] text-center text-xs text-[#5C534B] space-y-2">
+                {authModalMode === "login" ? (
+                  <p>
+                    ¿Aún no tienes cuenta?{" "}
+                    <button
+                      type="button"
+                      onClick={() => handleSwitchMode("register")}
+                      className="text-[#7A4E38] font-semibold hover:underline cursor-pointer"
+                    >
+                      Regístrate gratis
+                    </button>
+                  </p>
+                ) : (
+                  <p>
+                    ¿Ya tienes cuenta?{" "}
+                    <button
+                      type="button"
+                      onClick={() => handleSwitchMode("login")}
+                      className="text-[#7A4E38] font-semibold hover:underline cursor-pointer"
+                    >
+                      Inicia sesión aquí
+                    </button>
+                  </p>
+                )}
+              </div>
+            )}
         </>
 
       </div>
