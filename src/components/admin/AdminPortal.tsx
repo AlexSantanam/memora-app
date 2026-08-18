@@ -16,8 +16,28 @@ import {
 } from "lucide-react";
 
 export const AdminPortal: React.FC = () => {
-  const { metrics, memorials, openMemorialBySlug, openMemorialEdit, deleteMemorial, setCurrentView } = useApp();
+  const { currentUser, metrics, memorials, openMemorialBySlug, openMemorialEdit, deleteMemorial, setCurrentView } = useApp();
   const [searchTerm, setSearchTerm] = useState("");
+
+  // Defense in depth: the nav link is already hidden for non-admins, but this
+  // view must not render its contents just because currentView happens to be
+  // "admin" (e.g. reached via direct state manipulation).
+  if (currentUser?.role !== "admin") {
+    return (
+      <div className="min-h-screen bg-[#FAF7F2] flex items-center justify-center p-10 text-center">
+        <div>
+          <Shield className="w-10 h-10 text-[#D8CEBE] mx-auto mb-3" />
+          <p className="text-sm text-[#5C534B] mb-4">No tienes permisos para ver esta sección.</p>
+          <button
+            onClick={() => setCurrentView("dashboard")}
+            className="px-5 py-2 rounded-full bg-[#24201D] text-white text-xs font-semibold"
+          >
+            Ir al Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const filteredMemorials = memorials.filter(
     (m) =>

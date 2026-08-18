@@ -17,6 +17,10 @@ if (!RESEND_API_KEY) {
   console.warn("⚠️  RESEND_API_KEY not set in .env — payment receipt emails will not be sent.");
 }
 
+// In-memory dedupe for Flow webhook retries. Resets on server restart — fine for
+// this app's scale, but a real deployment should persist this in a database.
+const emailedFlowOrders = new Set<string>();
+
 interface ReceiptEmailParams {
   userEmail: string;
   userName?: string;
@@ -579,14 +583,22 @@ Genera 3 opciones de mensajes diferentes en formato JSON:
           acompanado: "MEMORA Legado",
         };
 
-        sendReceiptEmail({
-          userEmail: optionalData.userEmail || statusData.payer,
-          userName: optionalData.userName,
-          planName: planDisplayNames[optionalData.planId] || "MEMORA",
-          amountCLP: statusData.amount,
-          invoiceNumber: String(statusData.flowOrder || statusData.commerceOrder || ""),
-          paymentMethod: "Flow (Webpay)",
-        }).catch((e) => console.error("[Receipt Email] Failed from Flow webhook:", e));
+        // Flow retries webhook delivery on timeout/non-2xx — guard against
+        // emailing the same confirmed order more than once.
+        const orderKey = String(statusData.flowOrder || statusData.commerceOrder || "");
+        if (orderKey && !emailedFlowOrders.has(orderKey)) {
+          emailedFlowOrders.add(orderKey);
+          sendReceiptEmail({
+            userEmail: optionalData.userEmail || statusData.payer,
+            userName: optionalData.userName,
+            planName: planDisplayNames[optionalData.planId] || "MEMORA",
+            amountCLP: statusData.amount,
+            invoiceNumber: orderKey,
+            paymentMethod: "Flow (Webpay)",
+          }).catch((e) => console.error("[Receipt Email] Failed from Flow webhook:", e));
+        } else if (orderKey) {
+          console.log(`[Receipt Email] Skipped duplicate webhook for order ${orderKey}`);
+        }
       }
 
       res.status(200).send("OK");
