@@ -190,7 +190,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const saved = localStorage.getItem(LOCAL_STORAGE_KEY_ACCOUNTS);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // Always reconcile built-in seed accounts (role, password, plan) with
+          // their current definition in code — otherwise a stale copy cached in
+          // this browser's localStorage from an earlier session would silently
+          // keep overriding fixes like granting the admin role.
+          const seedEmails = new Set(INITIAL_ACCOUNTS.map((a) => a.email.toLowerCase()));
+          const realUserAccounts = parsed.filter(
+            (a: RegisteredAccount) => !seedEmails.has(a.email.toLowerCase())
+          );
+          return [...INITIAL_ACCOUNTS, ...realUserAccounts];
+        }
       }
       return INITIAL_ACCOUNTS;
     } catch {
