@@ -3,9 +3,106 @@ import path from "path";
 import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
+import { Resend } from "resend";
 import dotenv from "dotenv";
 
 dotenv.config();
+
+// Email Receipts (Resend) — https://resend.com/api-keys
+const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
+const RECEIPT_FROM_EMAIL = process.env.RECEIPT_FROM_EMAIL || "MEMORA <onboarding@resend.dev>";
+const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
+
+if (!RESEND_API_KEY) {
+  console.warn("⚠️  RESEND_API_KEY not set in .env — payment receipt emails will not be sent.");
+}
+
+interface ReceiptEmailParams {
+  userEmail: string;
+  userName?: string;
+  planName?: string;
+  amountCLP?: number;
+  invoiceNumber?: string;
+  paymentMethod?: string;
+}
+
+async function sendReceiptEmail(params: ReceiptEmailParams): Promise<{ success: boolean; id?: string; error?: string }> {
+  const { userEmail, userName, planName, amountCLP, invoiceNumber, paymentMethod } = params;
+
+  if (!userEmail) return { success: false, error: "userEmail es requerido." };
+  if (!resend) {
+    console.warn("[Receipt Email] Resend no configurado — omitiendo envío para", userEmail);
+    return { success: false, error: "Servicio de correo no configurado." };
+  }
+
+  const formattedAmount = `$${Number(amountCLP || 0).toLocaleString("es-CL")} CLP`;
+  const paidAt = new Date().toLocaleDateString("es-CL", { day: "numeric", month: "long", year: "numeric" });
+
+  const html = `
+  <div style="background-color:#FAF7F2;padding:40px 16px;font-family:Georgia,'Times New Roman',serif;">
+    <div style="max-width:520px;margin:0 auto;background:#ffffff;border-radius:24px;overflow:hidden;border:1px solid #EAE3D9;">
+      <div style="background-color:#24201D;padding:32px 32px 28px;text-align:center;">
+        <div style="font-family:Georgia,serif;font-size:22px;color:#ffffff;letter-spacing:1px;">MEMORA</div>
+        <div style="font-family:Arial,sans-serif;font-size:10px;color:#C5A880;letter-spacing:2px;text-transform:uppercase;margin-top:2px;">Recuerdos para siempre</div>
+      </div>
+      <div style="padding:32px;">
+        <p style="font-family:Arial,sans-serif;font-size:11px;color:#7A4E38;text-transform:uppercase;letter-spacing:1px;font-weight:bold;margin:0 0 4px;">Comprobante de pago</p>
+        <h1 style="font-family:Georgia,serif;font-size:22px;color:#24201D;margin:0 0 16px;font-weight:normal;">¡Gracias, ${userName || "familia MEMORA"}!</h1>
+        <p style="font-family:Arial,sans-serif;font-size:13px;color:#5C534B;line-height:1.6;margin:0 0 24px;">
+          Hemos recibido tu pago y tu plan ya está activo. A continuación el detalle de tu comprobante.
+        </p>
+        <table style="width:100%;border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px;color:#24201D;">
+          <tr>
+            <td style="padding:10px 0;border-bottom:1px solid #F4EFEA;color:#8C827A;">Plan</td>
+            <td style="padding:10px 0;border-bottom:1px solid #F4EFEA;text-align:right;font-weight:bold;">${planName || "MEMORA"}</td>
+          </tr>
+          <tr>
+            <td style="padding:10px 0;border-bottom:1px solid #F4EFEA;color:#8C827A;">Monto pagado</td>
+            <td style="padding:10px 0;border-bottom:1px solid #F4EFEA;text-align:right;font-weight:bold;">${formattedAmount}</td>
+          </tr>
+          <tr>
+            <td style="padding:10px 0;border-bottom:1px solid #F4EFEA;color:#8C827A;">Fecha</td>
+            <td style="padding:10px 0;border-bottom:1px solid #F4EFEA;text-align:right;">${paidAt}</td>
+          </tr>
+          <tr>
+            <td style="padding:10px 0;border-bottom:1px solid #F4EFEA;color:#8C827A;">Método de pago</td>
+            <td style="padding:10px 0;border-bottom:1px solid #F4EFEA;text-align:right;">${paymentMethod || "Flow"}</td>
+          </tr>
+          <tr>
+            <td style="padding:10px 0;color:#8C827A;">N° de orden</td>
+            <td style="padding:10px 0;text-align:right;font-family:monospace;">${invoiceNumber || "—"}</td>
+          </tr>
+        </table>
+        <p style="font-family:Arial,sans-serif;font-size:12px;color:#8C827A;line-height:1.6;margin:28px 0 0;">
+          Si tienes dudas sobre este cobro, respóndenos a este correo o escríbenos por WhatsApp. Gracias por confiar en MEMORA para conservar su historia.
+        </p>
+      </div>
+      <div style="background-color:#F4EFEA;padding:16px 32px;text-align:center;font-family:Arial,sans-serif;font-size:10px;color:#8C827A;">
+        © ${new Date().getFullYear()} MEMORA · Este comprobante fue generado automáticamente.
+      </div>
+    </div>
+  </div>`;
+
+  try {
+    const { data, error } = await resend.emails.send({
+      from: RECEIPT_FROM_EMAIL,
+      to: userEmail,
+      subject: `Comprobante de pago — ${planName || "MEMORA"} (${formattedAmount})`,
+      html,
+    });
+
+    if (error) {
+      console.error("[Receipt Email] Resend error:", error);
+      return { success: false, error: error.message };
+    }
+
+    console.log(`[Receipt Email] Sent to ${userEmail} (id: ${data?.id})`);
+    return { success: true, id: data?.id };
+  } catch (err: any) {
+    console.error("[Receipt Email] Send failed:", err);
+    return { success: false, error: err?.message };
+  }
+}
 
 // Flow Payments Configuration (Chile: Webpay Plus, Redcompra, Servipag, Mach, etc.)
 // Credentials must come from .env (never hardcode secrets here).
@@ -469,6 +566,34 @@ Genera 3 opciones de mensajes diferentes en formato JSON:
       // Status 2 = Pagada exitosamente
       if (statusData.status === 2) {
         console.log(`✅ Flow Order ${statusData.flowOrder} confirmed for ${statusData.payer}`);
+
+        let optionalData: any = {};
+        try {
+          optionalData = statusData.optional
+            ? typeof statusData.optional === "string"
+              ? JSON.parse(statusData.optional)
+              : statusData.optional
+            : {};
+        } catch {
+          optionalData = {};
+        }
+
+        const planDisplayNames: Record<string, string> = {
+          esencial: "MEMORA Esencial",
+          familia: "MEMORA Familia",
+          legado: "MEMORA Legado",
+          para_siempre: "MEMORA Familia",
+          acompanado: "MEMORA Legado",
+        };
+
+        sendReceiptEmail({
+          userEmail: optionalData.userEmail || statusData.payer,
+          userName: optionalData.userName,
+          planName: planDisplayNames[optionalData.planId] || "MEMORA",
+          amountCLP: statusData.amount,
+          invoiceNumber: String(statusData.flowOrder || statusData.commerceOrder || ""),
+          paymentMethod: "Flow (Webpay)",
+        }).catch((e) => console.error("[Receipt Email] Failed from Flow webhook:", e));
       }
 
       res.status(200).send("OK");
@@ -606,6 +731,14 @@ Genera 3 opciones de mensajes diferentes en formato JSON:
     } catch (err: any) {
       res.status(500).json({ error: "Error validating limits", details: err?.message });
     }
+  });
+
+  // Payment Receipt Email (Resend) — used by the client-side simulated card
+  // flow, where there's no server webhook to trigger it from.
+  app.post("/api/payments/send-receipt", async (req, res) => {
+    const { userEmail, userName, planName, amountCLP, invoiceNumber, paymentMethod } = req.body;
+    const result = await sendReceiptEmail({ userEmail, userName, planName, amountCLP, invoiceNumber, paymentMethod });
+    res.status(result.success ? 200 : 400).json(result);
   });
 
   // Simulated Payment Checkout / Webhook Integration (Fallback)

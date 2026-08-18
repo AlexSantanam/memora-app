@@ -1385,6 +1385,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       `Tu cuenta ahora cuenta con los beneficios de ${planConfig.name}. Capacidad de ${planConfig.maxMemoras} MEMORAs y hasta ${planConfig.maxPhotosTotal} fotografías.`
     );
 
+    if (currentUser?.email) {
+      fetch("/api/payments/send-receipt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userEmail: currentUser.email,
+          userName: currentUser.name,
+          planName: planConfig.name,
+          amountCLP: planConfig.priceMonthlyCLP,
+          invoiceNumber: newTx.invoiceNumber,
+          paymentMethod: "Tarjeta Internacional",
+        }),
+      }).catch((e) => console.warn("No se pudo enviar el comprobante por correo:", e));
+    }
+
     return newTx;
   };
 
