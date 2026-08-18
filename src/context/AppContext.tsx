@@ -287,8 +287,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Computed Global Storage and Resource Usage
   const userUsage = useMemo<UserUsageInfo>(() => {
-    return calculateUserGlobalUsage(currentUser?.id, memorials, currentUser?.currentPlan, currentUser?.subscription?.status);
-  }, [currentUser?.id, currentUser?.currentPlan, currentUser?.subscription?.status, memorials]);
+    return calculateUserGlobalUsage(
+      currentUser?.id,
+      memorials,
+      currentUser?.currentPlan,
+      currentUser?.subscription?.status,
+      currentUser?.role
+    );
+  }, [currentUser?.id, currentUser?.currentPlan, currentUser?.subscription?.status, currentUser?.role, memorials]);
 
   // Sync to LocalStorage
   useEffect(() => {

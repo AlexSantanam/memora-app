@@ -201,13 +201,38 @@ export function calculateUserGlobalUsage(
   userId: string | undefined,
   allMemorials: Array<any>,
   userPlanId?: string | null,
-  subscriptionStatus?: string | null
+  subscriptionStatus?: string | null,
+  userRole?: string | null
 ) {
   const plan = getPlanConfig(userPlanId);
   // Only an actually-paid (or legitimately trialing) subscription unlocks quota.
   // A freshly registered account with no completed payment gets zero capacity
   // until it goes through Flow checkout — the base Esencial plan is $990, not free.
   const isPaid = subscriptionStatus === "active" || subscriptionStatus === "free_trial";
+
+  // Admins can create and manage MEMORAs without plan limits — e.g. to help a
+  // client quickly in a specific case without forcing them through checkout.
+  if (userRole === "admin" && userId) {
+    const userMemorials = allMemorials.filter(
+      (m) => m.ownerId === userId || m.collaborators?.some((c: any) => c.userId === userId && c.role === "owner")
+    );
+    return {
+      plan,
+      isPaid: true,
+      memorasUsed: userMemorials.length,
+      memorasMax: Infinity,
+      memorasRemaining: Infinity,
+      canCreateMemora: true,
+      photosUsed: 0,
+      photosMax: Infinity,
+      photosRemaining: Infinity,
+      canUploadPhotos: () => true,
+      videosUsed: 0,
+      videosMax: Infinity,
+      videosRemaining: Infinity,
+      canUploadVideos: () => true,
+    };
+  }
 
   if (!userId) {
     return {
