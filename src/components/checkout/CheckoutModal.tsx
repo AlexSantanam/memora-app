@@ -24,10 +24,18 @@ interface CheckoutModalProps {
   onClose: () => void;
 }
 
+// Flow está temporalmente oculto: su firewall está bloqueando (HTTP 403) las
+// peticiones desde el servidor de Railway y aún no se ha resuelto (requiere
+// IP de salida fija + whitelist de parte de Flow). El código queda intacto
+// para reactivarlo solo cambiando esta constante a true.
+const FLOW_ENABLED = false;
+
 export const CheckoutModal: React.FC<CheckoutModalProps> = ({ planId, memorialId, onClose }) => {
   const { completePaymentSimulation, notify, currentUser } = useApp();
 
-  const [paymentGateway, setPaymentGateway] = useState<"flow" | "mercadopago" | "paypal">("flow");
+  const [paymentGateway, setPaymentGateway] = useState<"flow" | "mercadopago" | "paypal">(
+    FLOW_ENABLED ? "flow" : "mercadopago"
+  );
 
   // Flow State
   const [isFlowLoading, setIsFlowLoading] = useState(false);
@@ -265,16 +273,18 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ planId, memorialId
             </div>
 
             {/* Gateway Selection Tabs */}
-            <div className="grid grid-cols-3 p-1 bg-[#FAF7F2] rounded-2xl border border-[#EAE3D9] text-xs font-medium">
-              <button
-                type="button"
-                onClick={() => setPaymentGateway("flow")}
-                className={`py-2.5 px-2 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                  paymentGateway === "flow" ? "bg-white text-[#24201D] shadow-xs font-semibold" : "text-[#8C827A] hover:text-[#24201D]"
-                }`}
-              >
-                <span>🇨🇱 Flow</span>
-              </button>
+            <div className={`grid ${FLOW_ENABLED ? "grid-cols-3" : "grid-cols-2"} p-1 bg-[#FAF7F2] rounded-2xl border border-[#EAE3D9] text-xs font-medium`}>
+              {FLOW_ENABLED && (
+                <button
+                  type="button"
+                  onClick={() => setPaymentGateway("flow")}
+                  className={`py-2.5 px-2 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    paymentGateway === "flow" ? "bg-white text-[#24201D] shadow-xs font-semibold" : "text-[#8C827A] hover:text-[#24201D]"
+                  }`}
+                >
+                  <span>🇨🇱 Flow</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setPaymentGateway("mercadopago")}
@@ -296,7 +306,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ planId, memorialId
             </div>
 
             {/* FLOW PAYMENT (Webpay / Redcompra / MACH / Servipag — Chile) */}
-            {paymentGateway === "flow" && (
+            {FLOW_ENABLED && paymentGateway === "flow" && (
             <div className="space-y-4 animate-in fade-in duration-200">
                 <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200/80 space-y-3">
                   <div className="flex items-center justify-between">
