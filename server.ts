@@ -228,6 +228,36 @@ async function startServer() {
   app.use(express.json({ limit: "25mb" }));
   app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 
+  // Sitemap — only memorials the owner has actually chosen to make public and
+  // published belong here. "unlisted"/"private"/"password" memorials must
+  // never appear (that's the whole point of those privacy levels: reachable
+  // only by direct link, never discoverable via search).
+  app.get("/sitemap.xml", async (_req, res) => {
+    const origin = process.env.APP_URL || "https://memora.lat";
+    const staticUrls = [`${origin}/`, `${origin}/codigo-qr-memorial`];
+
+    let memorialUrls: string[] = [];
+    if (supabaseAdmin) {
+      const { data, error } = await supabaseAdmin
+        .from("memorials")
+        .select("slug, updated_at")
+        .eq("privacy", "public")
+        .eq("status", "published");
+      if (!error && data) {
+        memorialUrls = data.map((m) => `${origin}/m/${m.slug}`);
+      }
+    }
+
+    const allUrls = [...staticUrls, ...memorialUrls];
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${allUrls.map((url) => `  <url><loc>${url}</loc></url>`).join("\n")}
+</urlset>`;
+
+    res.header("Content-Type", "application/xml");
+    res.send(xml);
+  });
+
   // API Health Check
   app.get("/api/health", async (_req, res) => {
     let supabaseReachable: boolean | null = null;
@@ -1362,6 +1392,95 @@ Genera 3 opciones de mensajes diferentes en formato JSON:
       planId: planId || "para_siempre",
       message: "Pago verificado exitosamente mediante webhook seguro.",
     });
+  });
+
+  // SEO landing page targeting "código QR para lápida/memorial" searches —
+  // a static, JS-free HTML response (not the SPA) so search engines index
+  // the real content immediately without needing to execute React. Every
+  // claim here matches an actually-shipped feature (QR code generation,
+  // included free on every plan, printable, privacy controls) — nothing
+  // here should ever say something the product doesn't really do.
+  app.get("/codigo-qr-memorial", (_req, res) => {
+    res.header("Content-Type", "text/html; charset=utf-8");
+    res.send(`<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Código QR para Memorial Digital y Lápida | MEMORA Chile</title>
+<meta name="description" content="Crea un código QR permanente para lápidas, nichos y recordatorios funerarios en Chile. Al escanearlo, familiares y amigos acceden al memorial digital: fotos, videos, biografía y homenajes. Incluido gratis en todos los planes de MEMORA." />
+<link rel="canonical" href="https://memora.lat/codigo-qr-memorial" />
+<meta property="og:title" content="Código QR para Memorial Digital y Lápida | MEMORA" />
+<meta property="og:description" content="Un código QR que lleva directo al memorial digital de tu ser querido. Incluido gratis en todos los planes." />
+<meta property="og:type" content="website" />
+<meta property="og:url" content="https://memora.lat/codigo-qr-memorial" />
+<meta property="og:image" content="https://memora.lat/logo-principal.png" />
+<link rel="icon" type="image/png" href="/favicon.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Plus Jakarta Sans', sans-serif; background: #FAF7F2; color: #2C2723; line-height: 1.6; }
+  h1, h2 { font-family: 'Cormorant Garamond', serif; font-weight: 500; color: #24201D; }
+  .wrap { max-width: 780px; margin: 0 auto; padding: 0 24px; }
+  header { padding: 24px 0; }
+  header a { text-decoration: none; color: #24201D; font-weight: 700; font-size: 20px; letter-spacing: 0.02em; }
+  .hero { padding: 40px 0 24px; border-bottom: 1px solid #EAE3D9; }
+  .eyebrow { display: inline-block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #7A4E38; background: #F4EFEA; border: 1px solid #D8CEBE; border-radius: 999px; padding: 6px 14px; margin-bottom: 16px; }
+  h1 { font-size: 2.4rem; line-height: 1.2; margin-bottom: 16px; }
+  .lede { font-size: 1.05rem; color: #5C534B; max-width: 60ch; }
+  section { padding: 40px 0; border-bottom: 1px solid #EAE3D9; }
+  h2 { font-size: 1.6rem; margin-bottom: 16px; }
+  ul { padding-left: 20px; color: #3D3530; }
+  li { margin-bottom: 10px; }
+  .cta { text-align: center; padding: 48px 0; }
+  .btn { display: inline-block; background: #24201D; color: #fff; text-decoration: none; padding: 14px 32px; border-radius: 999px; font-weight: 600; font-size: 15px; }
+  .btn:hover { background: #3D3530; }
+  footer { text-align: center; padding: 32px 0; color: #8C827A; font-size: 12px; }
+  footer a { color: #7A4E38; }
+</style>
+</head>
+<body>
+<header><div class="wrap"><a href="/">MEMORA</a></div></header>
+
+<div class="wrap">
+  <div class="hero">
+    <span class="eyebrow">Código QR para Memoriales</span>
+    <h1>Un código QR que lleva directo a su memoria — para siempre.</h1>
+    <p class="lede">En MEMORA, cada memorial genera automáticamente un código QR de alta resolución, listo para imprimir en una placa, recordatorio funerario o libro de firmas. Cualquier persona lo escanea con la cámara de su teléfono y entra directo a las fotos, la biografía y los homenajes — sin instalar ninguna aplicación.</p>
+  </div>
+
+  <section>
+    <h2>¿Cómo funciona?</h2>
+    <ul>
+      <li>Al crear el memorial, el código QR se genera automáticamente — no es un paso aparte ni un costo adicional.</li>
+      <li>Se puede descargar en alta resolución para grabar en una placa metálica, imprimir en un recordatorio de papel, o pegar en una lápida o nicho.</li>
+      <li>Cualquier smartphone (Android o iPhone) lo lee directo desde la cámara, sin apps ni registros.</li>
+      <li>El memorial detrás del código se puede seguir editando con el tiempo: nuevas fotos, nuevas historias, nuevos homenajes — el QR nunca cambia.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Incluido en todos los planes, sin costo extra</h2>
+    <p>A diferencia de otros servicios donde el código QR es un producto físico aparte que hay que comprar, en MEMORA el código QR digital viene incluido en <strong>todos</strong> los planes — Esencial, Familia y Legado — desde $990 CLP al año.</p>
+  </section>
+
+  <section>
+    <h2>Privacidad bajo tu control</h2>
+    <p>Tú decides quién puede ver el memorial al que apunta el código: público para cualquiera, protegido con contraseña, solo por invitación, u oculto (no aparece en buscadores, solo accesible con el link o el QR).</p>
+  </section>
+
+  <div class="cta">
+    <a class="btn" href="/">Crear mi memorial en MEMORA</a>
+  </div>
+</div>
+
+<footer>
+  <div class="wrap">© ${new Date().getFullYear()} MEMORA. <a href="/">memora.lat</a></div>
+</footer>
+</body>
+</html>`);
   });
 
   // Vite middleware for dev / static files for prod
