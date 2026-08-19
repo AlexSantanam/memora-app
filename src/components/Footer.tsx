@@ -247,9 +247,9 @@ export const Footer: React.FC = () => {
             </div>
             <span className="text-[#7A7067]">MEMORA es un proyecto de Uni-Verso693</span>
             <span className="text-[#A89F95]">
-              Música ambiental: "The Long Dark" por{" "}
+              Música ambiental: "First Snow" por{" "}
               <a
-                href="https://www.scottbuckley.com.au/library/the-long-dark/"
+                href="https://www.scottbuckley.com.au/library/first-snow/"
                 target="_blank"
                 rel="noreferrer"
                 className="underline hover:text-[#7A7067]"

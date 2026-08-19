@@ -59,7 +59,7 @@ export const MemorialHero: React.FC<MemorialHeroProps> = ({
   const totalCandles = memorial.tributes?.filter((t) => t.candleLit).length || 0;
   const totalPhotos = memorial.media?.length || 0;
 
-  // "The Long Dark" by Scott Buckley — CC-BY 4.0, www.scottbuckley.com.au
+  // "First Snow" by Scott Buckley — CC-BY 4.0, www.scottbuckley.com.au
   const toggleAmbientMusic = () => {
     if (isPlayingMusic) {
       audioRef.current?.pause();
@@ -127,7 +127,7 @@ export const MemorialHero: React.FC<MemorialHeroProps> = ({
                   ? "bg-[#C5A880] text-[#1F1B18] ring-2 ring-white/50"
                   : "bg-white/80 hover:bg-white text-[#24201D] border border-white/40"
               }`}
-              title={`Música ambiental relajante — "The Long Dark" de Scott Buckley (CC-BY 4.0, scottbuckley.com.au)`}
+              title={`Música ambiental relajante — "First Snow" de Scott Buckley (CC-BY 4.0, scottbuckley.com.au)`}
             >
               {isPlayingMusic ? (
                 <>
