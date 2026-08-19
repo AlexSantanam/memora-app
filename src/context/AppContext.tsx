@@ -532,6 +532,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const isPaymentSuccess = urlParams.get("payment_success");
       const paymentStatus = urlParams.get("payment_status");
       const flowToken = urlParams.get("flow_token");
+      const mpPaymentId = urlParams.get("mp_payment_id");
 
       if (isPaymentSuccess === "true" && flowToken) {
         // Never trust plan/amount straight from the URL — verify the token against
@@ -625,8 +626,91 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             window.history.replaceState({}, document.title, cleanUrl);
           }
         })();
+      } else if (isPaymentSuccess === "true" && mpPaymentId) {
+        // Same never-trust-the-URL pattern as Flow above: verify the payment
+        // against Mercado Pago's own API server-side, resolve plan/memorial
+        // from our own payment_transactions row (by external_reference), then
+        // wait for the webhook's account_entitlements write to be reflected.
+        const cleanUrl = window.location.pathname;
+        (async () => {
+          try {
+            const res = await fetch(`/api/payments/mercadopago/status/${encodeURIComponent(mpPaymentId)}`);
+            const json = await res.json();
+            const payment = json?.data;
+
+            if (!json?.success || payment?.status !== "approved") {
+              notify(
+                "warning",
+                "No pudimos verificar tu pago",
+                "Si realizaste un pago y ves este mensaje, contáctanos por WhatsApp con tu número de orden."
+              );
+              return;
+            }
+
+            const referenceId = payment.external_reference;
+            const { data: txRow } = await supabase
+              .from("payment_transactions")
+              .select("plan_id, memorial_id")
+              .eq("invoice_number", referenceId)
+              .maybeSingle();
+
+            const normalizedPlan = normalizePlanId(txRow?.plan_id || "esencial");
+            const planConfig = getPlanConfig(normalizedPlan);
+            const memorialId: string | undefined = txRow?.memorial_id || undefined;
+
+            let reflected = false;
+            for (let attempt = 0; attempt < 5 && !reflected; attempt++) {
+              if (attempt > 0) await new Promise((r) => setTimeout(r, 1500));
+              const { data: ent } = await supabase
+                .from("account_entitlements")
+                .select("current_plan, subscription_status")
+                .eq("user_id", currentUser?.id)
+                .maybeSingle();
+              if (ent?.subscription_status === "active" && ent?.current_plan === normalizedPlan) {
+                reflected = true;
+              }
+            }
+
+            if (!reflected) {
+              notify(
+                "warning",
+                "Tu pago fue aprobado, activando tu plan...",
+                "Puede tardar unos segundos en reflejarse. Si tras un par de minutos no ves tu plan activo, contáctanos por WhatsApp."
+              );
+              return;
+            }
+
+            const user = await fetchUserProfile(currentUser);
+            if (user) setCurrentUser(user);
+
+            if (memorialId) {
+              const full = await fetchMemorialsByFilter({ ids: [memorialId] });
+              if (full[0]) {
+                setMemorials((prev) => [...prev.filter((m) => m.id !== memorialId), ...full]);
+              }
+            }
+
+            confetti({
+              particleCount: 100,
+              spread: 70,
+              origin: { y: 0.6 },
+              colors: ["#C5A880", "#7A4E38", "#24201D", "#10B981"],
+            });
+
+            notify(
+              "success",
+              "¡Suscripción aprobada en Mercado Pago!",
+              `Tu plan ${planConfig.name} ha sido activado exitosamente.`
+            );
+          } catch (e) {
+            console.error("Error verifying Mercado Pago payment:", e);
+            notify("error", "Error verificando el pago", "Intenta nuevamente o contáctanos por WhatsApp.");
+          } finally {
+            window.history.replaceState({}, document.title, cleanUrl);
+          }
+        })();
       } else if (isPaymentSuccess === "false" || paymentStatus === "cancelled" || paymentStatus === "error") {
-        notify("warning", "Pago no completado", "La transacción en Flow fue cancelada o rechazada. Puedes intentar nuevamente.");
+        notify("warning", "Pago no completado", "La transacción fue cancelada o rechazada. Puedes intentar nuevamente.");
         const cleanUrl = window.location.pathname;
         window.history.replaceState({}, document.title, cleanUrl);
       }

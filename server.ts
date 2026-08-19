@@ -160,6 +160,25 @@ const PAYPAL_PLAN_PRICES_USD: Record<string, string> = {
   acompanado: "24.99",
 };
 
+// Mercado Pago (Chile + rest of Latam) — https://www.mercadopago.cl/developers
+const MERCADOPAGO_ACCESS_TOKEN = process.env.MERCADOPAGO_ACCESS_TOKEN || "";
+const MERCADOPAGO_ENV = process.env.MERCADOPAGO_ENVIRONMENT || "sandbox";
+const MERCADOPAGO_BASE_URL = "https://api.mercadopago.com";
+
+if (!MERCADOPAGO_ACCESS_TOKEN) {
+  console.warn("⚠️  MERCADOPAGO_ACCESS_TOKEN not set in .env — Mercado Pago routes will fail.");
+}
+
+// Same CLP pricing as Flow (see /api/payments/flow/create-order) — Mercado
+// Pago is offered as an alternative Chilean gateway, not a different market.
+const MERCADOPAGO_PLAN_PRICES_CLP: Record<string, number> = {
+  esencial: 990,
+  familia: 4900,
+  legado: 14900,
+  para_siempre: 4900,
+  acompanado: 14900,
+};
+
 async function getPayPalAccessToken(): Promise<string> {
   const auth = Buffer.from(`${PAYPAL_CLIENT_ID}:${PAYPAL_CLIENT_SECRET}`).toString("base64");
   const res = await fetch(`${PAYPAL_BASE_URL}/v1/oauth2/token`, {
@@ -215,6 +234,8 @@ async function startServer() {
       flowEnvironment: FLOW_ENV,
       paypalConfigured: !!PAYPAL_CLIENT_ID && !!PAYPAL_CLIENT_SECRET,
       paypalEnvironment: PAYPAL_ENV,
+      mercadopagoConfigured: !!MERCADOPAGO_ACCESS_TOKEN,
+      mercadopagoEnvironment: MERCADOPAGO_ENV,
       supabaseConfigured: !!supabaseAdmin,
       supabaseReachable,
     });
@@ -978,6 +999,233 @@ Genera 3 opciones de mensajes diferentes en formato JSON:
     } catch (err: any) {
       console.error("Error in /api/payments/paypal/capture-order:", err);
       res.status(500).json({ success: false, error: "Error al procesar la captura del pago." });
+    }
+  });
+
+  // ==========================================
+  // MERCADO PAGO PAYMENT GATEWAY (Chile + Latam)
+  // ==========================================
+
+  app.get("/api/payments/mercadopago/config", (_req, res) => {
+    res.json({
+      configured: !!MERCADOPAGO_ACCESS_TOKEN,
+      currency: "CLP",
+      prices: MERCADOPAGO_PLAN_PRICES_CLP,
+    });
+  });
+
+  // Creates a Mercado Pago "preference" (Checkout Pro, redirect-based — same
+  // shape as the Flow flow) AND a matching "pending" row in payment_transactions
+  // keyed by external_reference, so the webhook can look it up without trusting
+  // anything from the client.
+  app.post("/api/payments/mercadopago/create-preference", async (req, res) => {
+    try {
+      const { planId, memorialId, userEmail, userName } = req.body;
+      const normalizedPlan = planId === "para_siempre" ? "familia" : planId === "acompanado" ? "legado" : (planId || "esencial");
+      const amount = MERCADOPAGO_PLAN_PRICES_CLP[normalizedPlan];
+      if (!amount) {
+        return res.status(400).json({ success: false, error: `Plan desconocido: ${planId}` });
+      }
+      if (!supabaseAdmin) {
+        return res.status(500).json({ success: false, error: "Base de datos no configurada." });
+      }
+      if (!MERCADOPAGO_ACCESS_TOKEN) {
+        return res.status(500).json({ success: false, error: "Mercado Pago no está configurado." });
+      }
+
+      const referenceId = `MP-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`;
+
+      let userId: string | null = null;
+      if (userEmail) {
+        const { data: profile } = await supabaseAdmin.from("profiles").select("id").eq("email", userEmail).maybeSingle();
+        userId = profile?.id || null;
+      }
+
+      const { error: insertErr } = await supabaseAdmin.from("payment_transactions").insert({
+        user_id: userId,
+        memorial_id: memorialId || null,
+        plan_id: normalizedPlan,
+        amount,
+        currency: "CLP",
+        status: "pending",
+        provider: "mercadopago",
+        invoice_number: referenceId,
+      });
+      if (insertErr) throw insertErr;
+
+      const host = req.get("host") || "localhost:3000";
+      const protocol = req.protocol === "https" || req.headers["x-forwarded-proto"] === "https" ? "https" : "http";
+      const origin = process.env.APP_URL || `${protocol}://${host}`;
+
+      const planTitles: Record<string, string> = {
+        esencial: "MEMORA Esencial",
+        familia: "MEMORA Familia",
+        legado: "MEMORA Legado",
+      };
+
+      // auto_return requires back_urls.success to be a publicly reachable
+      // https URL — Mercado Pago rejects the whole preference otherwise, which
+      // matters locally (http://localhost) but not in production (Railway/https).
+      const isPubliclyReachable = origin.startsWith("https://");
+
+      const prefRes = await fetch(`${MERCADOPAGO_BASE_URL}/checkout/preferences`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${MERCADOPAGO_ACCESS_TOKEN}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: [
+            {
+              title: planTitles[normalizedPlan] || "MEMORA",
+              quantity: 1,
+              unit_price: amount,
+              currency_id: "CLP",
+            },
+          ],
+          payer: { email: userEmail || undefined, name: userName || undefined },
+          external_reference: referenceId,
+          back_urls: {
+            success: `${origin}/api/payments/mercadopago/return`,
+            failure: `${origin}/api/payments/mercadopago/return`,
+            pending: `${origin}/api/payments/mercadopago/return`,
+          },
+          ...(isPubliclyReachable ? { auto_return: "approved" } : {}),
+          notification_url: isPubliclyReachable ? `${origin}/api/payments/mercadopago/webhook` : undefined,
+        }),
+      });
+      const prefData = await prefRes.json();
+
+      if (!prefRes.ok || !prefData.id) {
+        console.error("[Mercado Pago] create-preference failed:", prefData);
+        return res.status(500).json({ success: false, error: "No se pudo crear la preferencia de pago en Mercado Pago." });
+      }
+
+      res.json({
+        success: true,
+        redirectUrl: MERCADOPAGO_ENV === "production" ? prefData.init_point : prefData.sandbox_init_point || prefData.init_point,
+      });
+    } catch (err: any) {
+      console.error("Error in /api/payments/mercadopago/create-preference:", err);
+      res.status(500).json({ success: false, error: "Error interno del servidor de pagos." });
+    }
+  });
+
+  // Mercado Pago Webhook — the authoritative writer, same role as the Flow
+  // confirmation webhook and PayPal's capture-order. Idempotent via the
+  // pending->completed status transition on payment_transactions.
+  app.post("/api/payments/mercadopago/webhook", async (req, res) => {
+    try {
+      const topic = String(req.query.topic || req.query.type || req.body?.type || "");
+      const paymentId = String(req.query.id || req.body?.data?.id || "");
+
+      if (topic !== "payment" || !paymentId) {
+        // Mercado Pago also notifies about merchant_order and other topics we
+        // don't care about — ack with 200 so it doesn't retry forever.
+        return res.status(200).send("OK");
+      }
+      if (!supabaseAdmin || !MERCADOPAGO_ACCESS_TOKEN) {
+        return res.status(500).send("Not configured");
+      }
+
+      const paymentRes = await fetch(`${MERCADOPAGO_BASE_URL}/v1/payments/${paymentId}`, {
+        headers: { Authorization: `Bearer ${MERCADOPAGO_ACCESS_TOKEN}` },
+      });
+      const payment = await paymentRes.json();
+
+      if (!paymentRes.ok) {
+        console.error("[Mercado Pago Webhook] Failed to fetch payment:", payment);
+        return res.status(500).send("Failed to fetch payment");
+      }
+
+      console.log("[Mercado Pago Webhook Received]:", { id: paymentId, status: payment.status, external_reference: payment.external_reference });
+
+      if (payment.status !== "approved") {
+        return res.status(200).send("OK");
+      }
+
+      const referenceId = payment.external_reference;
+      if (!referenceId) {
+        console.error("[Mercado Pago Webhook] Approved payment with no external_reference — cannot persist safely.");
+        return res.status(200).send("OK");
+      }
+
+      const { data: transitioned, error: updateErr } = await supabaseAdmin
+        .from("payment_transactions")
+        .update({ status: "completed" })
+        .eq("invoice_number", referenceId)
+        .eq("status", "pending")
+        .select("*")
+        .maybeSingle();
+      if (updateErr) throw updateErr;
+
+      if (transitioned) {
+        if (transitioned.user_id) {
+          await supabaseAdmin
+            .from("account_entitlements")
+            .update({
+              current_plan: transitioned.plan_id,
+              subscription_status: "active",
+              subscription_start_date: new Date().toISOString(),
+              next_renewal_date: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+              price_clp: transitioned.amount,
+            })
+            .eq("user_id", transitioned.user_id);
+
+          if (transitioned.memorial_id) {
+            await supabaseAdmin
+              .from("memorials")
+              .update({ plan_id: transitioned.plan_id })
+              .eq("id", transitioned.memorial_id)
+              .eq("owner_id", transitioned.user_id);
+          }
+        }
+
+        sendReceiptEmail({
+          userEmail: payment.payer?.email || "",
+          userName: [payment.payer?.first_name, payment.payer?.last_name].filter(Boolean).join(" ") || undefined,
+          planName: `MEMORA ${transitioned.plan_id}`,
+          amountCLP: transitioned.amount,
+          invoiceNumber: referenceId,
+          paymentMethod: "Mercado Pago",
+        }).catch((e) => console.error("[Receipt Email] Failed from Mercado Pago webhook:", e));
+      } else {
+        console.log(`[Mercado Pago Webhook] Duplicate delivery for ${referenceId} — already processed, skipping.`);
+      }
+
+      res.status(200).send("OK");
+    } catch (err: any) {
+      console.error("Error handling Mercado Pago webhook:", err);
+      res.status(500).send("Webhook Error");
+    }
+  });
+
+  // Mercado Pago User Return Redirect — the browser lands here after checkout;
+  // this only redirects with a payment id for the client to verify server-side,
+  // it never grants anything itself (the webhook above is the sole writer).
+  const handleMercadoPagoReturn = (req: express.Request, res: express.Response) => {
+    const status = String(req.query.collection_status || req.query.status || "");
+    const paymentId = String(req.query.payment_id || req.query["collection_id"] || "");
+    const isSuccess = status === "approved";
+    res.redirect(`/?payment_success=${isSuccess}&mp_payment_id=${paymentId}&provider=mercadopago`);
+  };
+  app.get("/api/payments/mercadopago/return", handleMercadoPagoReturn);
+  app.post("/api/payments/mercadopago/return", handleMercadoPagoReturn);
+
+  // Lets the client verify a payment's real status server-side instead of
+  // trusting the redirect URL — mirrors /api/payments/flow/status/:token.
+  app.get("/api/payments/mercadopago/status/:paymentId", async (req, res) => {
+    try {
+      if (!MERCADOPAGO_ACCESS_TOKEN) {
+        return res.status(500).json({ success: false, error: "Mercado Pago no está configurado." });
+      }
+      const paymentRes = await fetch(`${MERCADOPAGO_BASE_URL}/v1/payments/${req.params.paymentId}`, {
+        headers: { Authorization: `Bearer ${MERCADOPAGO_ACCESS_TOKEN}` },
+      });
+      const data = await paymentRes.json();
+      if (!paymentRes.ok) {
+        return res.status(500).json({ success: false, error: "No se pudo verificar el pago." });
+      }
+      res.json({ success: true, data });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
     }
   });
 

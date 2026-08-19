@@ -27,11 +27,14 @@ interface CheckoutModalProps {
 export const CheckoutModal: React.FC<CheckoutModalProps> = ({ planId, memorialId, onClose }) => {
   const { completePaymentSimulation, notify, currentUser } = useApp();
 
-  const [paymentGateway, setPaymentGateway] = useState<"flow" | "paypal">("flow");
+  const [paymentGateway, setPaymentGateway] = useState<"flow" | "mercadopago" | "paypal">("flow");
 
   // Flow State
   const [isFlowLoading, setIsFlowLoading] = useState(false);
   const [isDone, setIsDone] = useState(false);
+
+  // Mercado Pago State
+  const [isMercadoPagoLoading, setIsMercadoPagoLoading] = useState(false);
 
   // PayPal State
   const [paypalClientId, setPaypalClientId] = useState<string | null>(null);
@@ -92,6 +95,35 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ planId, memorialId
       setIsFlowLoading(false);
       console.error("Flow payment initialization failed:", err?.message);
       notify("error", "No se pudo conectar con Flow", "Intenta nuevamente en unos minutos o contáctanos por WhatsApp.");
+    }
+  };
+
+  // Handle Mercado Pago Checkout Pro (redirect-based, same shape as Flow)
+  const handleMercadoPagoPayment = async () => {
+    setIsMercadoPagoLoading(true);
+    try {
+      const res = await fetch("/api/payments/mercadopago/create-preference", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          planId,
+          memorialId: memorialId || "",
+          userEmail: currentUser?.email || "",
+          userName: currentUser?.name || "Cliente Memora",
+        }),
+      });
+      const data = await res.json();
+
+      if (data.success && data.redirectUrl) {
+        notify("info", "Redirigiendo a Mercado Pago...", "Ingresando a la pasarela segura.");
+        window.location.href = data.redirectUrl;
+      } else {
+        throw new Error(data.error || "No se pudo iniciar la pasarela de pagos.");
+      }
+    } catch (err: any) {
+      setIsMercadoPagoLoading(false);
+      console.error("Mercado Pago payment initialization failed:", err?.message);
+      notify("error", "No se pudo conectar con Mercado Pago", "Intenta nuevamente en unos minutos o contáctanos por WhatsApp.");
     }
   };
 
@@ -233,24 +265,33 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ planId, memorialId
             </div>
 
             {/* Gateway Selection Tabs */}
-            <div className="grid grid-cols-2 p-1 bg-[#FAF7F2] rounded-2xl border border-[#EAE3D9] text-xs font-medium">
+            <div className="grid grid-cols-3 p-1 bg-[#FAF7F2] rounded-2xl border border-[#EAE3D9] text-xs font-medium">
               <button
                 type="button"
                 onClick={() => setPaymentGateway("flow")}
-                className={`py-2.5 px-3 rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                className={`py-2.5 px-2 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                   paymentGateway === "flow" ? "bg-white text-[#24201D] shadow-xs font-semibold" : "text-[#8C827A] hover:text-[#24201D]"
                 }`}
               >
-                <span>🇨🇱 Flow (Chile)</span>
+                <span>🇨🇱 Flow</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setPaymentGateway("mercadopago")}
+                className={`py-2.5 px-2 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  paymentGateway === "mercadopago" ? "bg-white text-[#24201D] shadow-xs font-semibold" : "text-[#8C827A] hover:text-[#24201D]"
+                }`}
+              >
+                <span>💙 Mercado Pago</span>
               </button>
               <button
                 type="button"
                 onClick={() => setPaymentGateway("paypal")}
-                className={`py-2.5 px-3 rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                className={`py-2.5 px-2 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                   paymentGateway === "paypal" ? "bg-white text-[#24201D] shadow-xs font-semibold" : "text-[#8C827A] hover:text-[#24201D]"
                 }`}
               >
-                <span>🌎 PayPal (Internacional)</span>
+                <span>🌎 PayPal</span>
               </button>
             </div>
 
@@ -306,6 +347,57 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ planId, memorialId
                     <>
                       <Lock className="w-3.5 h-3.5 text-[#C5A880]" />
                       <span>Pagar ${amountCLP.toLocaleString("es-CL")} CLP en Flow</span>
+                      <ExternalLink className="w-3.5 h-3.5 text-stone-400" />
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
+
+            {/* MERCADO PAGO PAYMENT (Chile + Latam) */}
+            {paymentGateway === "mercadopago" && (
+              <div className="space-y-4 animate-in fade-in duration-200">
+                <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200/80 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-[#24201D]">
+                      Medios de pago habilitados por Mercado Pago:
+                    </span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-[#00B1EA] text-white">
+                      API Oficial
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-[11px] text-[#5C534B]">
+                    <div className="flex items-center gap-2 p-2 rounded-xl bg-white border border-[#EAE3D9]">
+                      <CreditCard className="w-4 h-4 text-sky-600 flex-shrink-0" />
+                      <span>Tarjetas de débito/crédito</span>
+                    </div>
+                    <div className="flex items-center gap-2 p-2 rounded-xl bg-white border border-[#EAE3D9]">
+                      <Wallet className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                      <span>Saldo Mercado Pago</span>
+                    </div>
+                  </div>
+
+                  <p className="text-[11px] text-[#8C827A] leading-relaxed">
+                    Al presionar el botón serás redirigido de forma segura a Mercado Pago para completar tu pago. Una vez aprobado, tu memorial y placa QR quedarán activos al instante.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleMercadoPagoPayment}
+                  disabled={isMercadoPagoLoading}
+                  className="w-full py-3.5 rounded-full bg-[#24201D] text-white hover:bg-[#3D3530] text-sm font-semibold flex items-center justify-center gap-2 transition-all shadow-md active:scale-[0.98] disabled:opacity-50 cursor-pointer"
+                >
+                  {isMercadoPagoLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-[#C5A880]" />
+                      <span>Conectando con Mercado Pago...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Lock className="w-3.5 h-3.5 text-[#C5A880]" />
+                      <span>Pagar ${amountCLP.toLocaleString("es-CL")} CLP en Mercado Pago</span>
                       <ExternalLink className="w-3.5 h-3.5 text-stone-400" />
                     </>
                   )}
