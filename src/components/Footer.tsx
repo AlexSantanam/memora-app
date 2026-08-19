@@ -246,6 +246,18 @@ export const Footer: React.FC = () => {
               <span>Español (Latinoamérica) · Precios en CLP</span>
             </div>
             <span className="text-[#7A7067]">MEMORA es un proyecto de Uni-Verso693</span>
+            <span className="text-[#A89F95]">
+              Música ambiental: "The Long Dark" por{" "}
+              <a
+                href="https://www.scottbuckley.com.au/library/the-long-dark/"
+                target="_blank"
+                rel="noreferrer"
+                className="underline hover:text-[#7A7067]"
+              >
+                Scott Buckley
+              </a>{" "}
+              (CC-BY 4.0)
+            </span>
           </div>
           <p className="text-center sm:text-right">
             © {new Date().getFullYear()} MEMORA. Recuerdos Para Siempre. Todos los derechos reservados.

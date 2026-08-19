@@ -34,9 +34,7 @@ export const MemorialHero: React.FC<MemorialHeroProps> = ({
 }) => {
   const { openMemorialEdit, currentUser, setActivePrintableMemorial } = useApp();
   const [isPlayingMusic, setIsPlayingMusic] = useState(false);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const oscillatorRef = useRef<OscillatorNode | null>(null);
-  const gainNodeRef = useRef<GainNode | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const isOwnerOrCollaborator =
     currentUser &&
@@ -61,58 +59,30 @@ export const MemorialHero: React.FC<MemorialHeroProps> = ({
   const totalCandles = memorial.tributes?.filter((t) => t.candleLit).length || 0;
   const totalPhotos = memorial.media?.length || 0;
 
-  // Gentle ambient meditative piano chime synth
+  // "The Long Dark" by Scott Buckley — CC-BY 4.0, www.scottbuckley.com.au
   const toggleAmbientMusic = () => {
     if (isPlayingMusic) {
-      if (oscillatorRef.current) {
-        try {
-          oscillatorRef.current.stop();
-        } catch {}
-      }
+      audioRef.current?.pause();
       setIsPlayingMusic(false);
     } else {
-      try {
-        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-        const ctx = new AudioCtx();
-        audioContextRef.current = ctx;
-
-        // Gentle soothing harmonic chord generator
-        const osc1 = ctx.createOscillator();
-        const osc2 = ctx.createOscillator();
-        const gain = ctx.createGain();
-
-        osc1.type = "sine";
-        osc1.frequency.setValueAtTime(220, ctx.currentTime); // A3
-        osc2.type = "sine";
-        osc2.frequency.setValueAtTime(277.18, ctx.currentTime); // C#4
-
-        gain.gain.setValueAtTime(0.01, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.08, ctx.currentTime + 2);
-
-        osc1.connect(gain);
-        osc2.connect(gain);
-        gain.connect(ctx.destination);
-
-        osc1.start();
-        osc2.start();
-
-        oscillatorRef.current = osc1;
-        gainNodeRef.current = gain;
-        setIsPlayingMusic(true);
-      } catch (e) {
-        console.warn("Audio Context init error:", e);
-        setIsPlayingMusic(false);
+      if (!audioRef.current) {
+        const audio = new Audio("/audio/ambient-piano.mp3");
+        audio.loop = true;
+        audio.volume = 0.35;
+        audio.addEventListener("ended", () => setIsPlayingMusic(false));
+        audioRef.current = audio;
       }
+      audioRef.current.play().catch((e) => {
+        console.warn("Ambient audio playback error:", e);
+        setIsPlayingMusic(false);
+      });
+      setIsPlayingMusic(true);
     }
   };
 
   useEffect(() => {
     return () => {
-      if (audioContextRef.current && audioContextRef.current.state !== "closed") {
-        try {
-          audioContextRef.current.close();
-        } catch {}
-      }
+      audioRef.current?.pause();
     };
   }, []);
 
@@ -157,7 +127,7 @@ export const MemorialHero: React.FC<MemorialHeroProps> = ({
                   ? "bg-[#C5A880] text-[#1F1B18] ring-2 ring-white/50"
                   : "bg-white/80 hover:bg-white text-[#24201D] border border-white/40"
               }`}
-              title="Música ambiental relajante"
+              title={`Música ambiental relajante — "The Long Dark" de Scott Buckley (CC-BY 4.0, scottbuckley.com.au)`}
             >
               {isPlayingMusic ? (
                 <>
