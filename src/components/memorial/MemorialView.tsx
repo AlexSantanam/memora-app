@@ -6,7 +6,7 @@ import { TributeModal } from "./TributeModal";
 import { ShareModal } from "./ShareModal";
 import { MediaLightboxModal } from "./MediaLightboxModal";
 import { MediaItem } from "../../types";
-import { Lock, KeyRound, ArrowLeft, Heart, Sparkles, Share2, Printer } from "lucide-react";
+import { Lock, KeyRound, ArrowLeft, Heart, Sparkles, Share2, Printer, Loader2 } from "lucide-react";
 
 export const MemorialView: React.FC = () => {
   const {
@@ -15,6 +15,7 @@ export const MemorialView: React.FC = () => {
     activeShareMemorial,
     setActiveShareMemorial,
     setActivePrintableMemorial,
+    isResolvingMemorial,
   } = useApp();
 
   const [isTributeModalOpen, setIsTributeModalOpen] = useState(false);
@@ -22,6 +23,15 @@ export const MemorialView: React.FC = () => {
   const [passwordInput, setPasswordInput] = useState("");
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [passwordError, setPasswordError] = useState(false);
+
+  if (!currentMemorial && isResolvingMemorial) {
+    return (
+      <div className="min-h-[70vh] bg-[#FAF7F2] flex flex-col items-center justify-center p-6 text-center">
+        <Loader2 className="w-8 h-8 text-[#C5A880] animate-spin mb-4" />
+        <p className="text-sm text-[#8C827A]">Cargando memorial...</p>
+      </div>
+    );
+  }
 
   if (!currentMemorial) {
     return (

@@ -76,6 +76,7 @@ interface AppContextType {
   setActiveEditTab: (tab: "general" | "story" | "media" | "timeline" | "family" | "events" | "collaborators" | "tributes" | "privacy" | "qr") => void;
   openMemorialBySlug: (slug: string) => void;
   openMemorialById: (id: string) => void;
+  isResolvingMemorial: boolean;
   openMemorialEdit: (id: string, tab?: "general" | "story" | "media" | "timeline" | "family" | "events" | "collaborators" | "tributes" | "privacy" | "qr") => void;
   dashboardTab: "memorials" | "billing" | "security";
   setDashboardTab: (tab: "memorials" | "billing" | "security") => void;
@@ -332,6 +333,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [currentView, setCurrentView] = useState<AppView>("landing");
   const [selectedMemorialSlug, setSelectedMemorialSlug] = useState<string | null>(null);
   const [selectedMemorialId, setSelectedMemorialId] = useState<string | null>(null);
+  // True while a memorial not yet in local state is being fetched by slug —
+  // lets MemorialView show a loading state instead of flashing "not found"
+  // during the fetch (currentMemorial resolves to undefined until it lands).
+  const [isResolvingMemorial, setIsResolvingMemorial] = useState(false);
   const [activeEditTab, setActiveEditTab] = useState<"general" | "story" | "media" | "timeline" | "family" | "events" | "collaborators" | "tributes" | "privacy" | "qr">("general");
   const [dashboardTab, setDashboardTab] = useState<"memorials" | "billing" | "security">("memorials");
 
@@ -964,10 +969,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // what's actually returned: public+published, or owner/admin/collaborator).
     const alreadyLoaded = memorials.some((m) => m.slug === slug);
     if (!alreadyLoaded) {
+      setIsResolvingMemorial(true);
       fetchMemorialsByFilter({ slug }).then((found) => {
         if (found.length > 0) {
           setMemorials((prev) => [...prev.filter((m) => m.slug !== slug), ...found]);
         }
+        setIsResolvingMemorial(false);
       });
     }
   };
@@ -1753,6 +1760,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setDashboardTab,
         openMyProfile,
         openMemorialBySlug,
+        isResolvingMemorial,
         openMemorialById,
         openMemorialEdit,
 
