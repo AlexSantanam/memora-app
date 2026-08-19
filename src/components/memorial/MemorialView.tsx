@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useApp } from "../../context/AppContext";
 import { MemorialHero } from "./MemorialHero";
 import { MemorialTabs } from "./MemorialTabs";
@@ -19,6 +19,15 @@ export const MemorialView: React.FC = () => {
   } = useApp();
 
   const [isTributeModalOpen, setIsTributeModalOpen] = useState(false);
+
+  // El scroll no siempre vuelve al inicio al llegar aquí (depende de por
+  // dónde se navegó) — como el navbar queda "pegado" arriba, un scroll a
+  // mitad de camino se ve idéntico al tope de la página, ocultando el
+  // botón de música y otros controles sin que nada indique que hay que
+  // subir para verlos.
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [currentMemorial?.id]);
   const [selectedLightboxItem, setSelectedLightboxItem] = useState<MediaItem | null>(null);
   const [passwordInput, setPasswordInput] = useState("");
   const [isUnlocked, setIsUnlocked] = useState(false);
