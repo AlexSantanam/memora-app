@@ -17,6 +17,7 @@ import {
   ExternalLink,
   Lock,
   Copy,
+  Navigation,
 } from "lucide-react";
 
 interface MemorialTabsProps {
@@ -61,6 +62,9 @@ export const MemorialTabs: React.FC<MemorialTabsProps> = ({
       `${ev.title} — en memoria de ${memorial.personName}`,
       `${dateLabel} a las ${ev.time}`,
       ev.locationName ? `Lugar: ${ev.locationName}` : "",
+      ev.locationName && ev.locationName !== "Lugar a confirmar"
+        ? `Cómo llegar: https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(ev.address || ev.locationName)}`
+        : "",
       ev.virtualLink ? `Transmisión en vivo: ${ev.virtualLink}` : "",
       `Más detalles: ${memorialUrl}`,
     ].filter(Boolean);
@@ -730,9 +734,20 @@ export const MemorialTabs: React.FC<MemorialTabsProps> = ({
                         <strong>Fecha y hora:</strong>{" "}
                         {new Date(ev.date + "T00:00:00").toLocaleDateString("es-CL", { day: "numeric", month: "long", year: "numeric" })} — {ev.time}
                       </p>
-                      <p className="flex items-center gap-2">
+                      <p className="flex items-center gap-2 flex-wrap">
                         <MapPin className="w-4 h-4 text-[#C5A880]" />
                         <strong>Lugar:</strong> {ev.locationName}
+                        {ev.locationName && ev.locationName !== "Lugar a confirmar" && (
+                          <a
+                            href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(ev.address || ev.locationName)}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 text-[#7A4E38] underline underline-offset-2 font-medium"
+                          >
+                            <Navigation className="w-3 h-3" />
+                            Cómo llegar
+                          </a>
+                        )}
                       </p>
                       {ev.virtualLink && (
                         <p className="flex items-center gap-2">

@@ -119,6 +119,7 @@ export const MemorialEdit: React.FC = () => {
   const [newEventDate, setNewEventDate] = useState("");
   const [newEventTime, setNewEventTime] = useState("");
   const [newEventLocation, setNewEventLocation] = useState("");
+  const [newEventAddress, setNewEventAddress] = useState("");
   const [newEventVirtualLink, setNewEventVirtualLink] = useState("");
   const [newEventType, setNewEventType] = useState<MemorialEvent["type"]>("ceremonia");
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
@@ -258,6 +259,7 @@ export const MemorialEdit: React.FC = () => {
       date: newEventDate,
       time: newEventTime || "12:00",
       locationName: newEventLocation || "Lugar a confirmar",
+      address: newEventAddress.trim() || undefined,
       virtualLink: newEventVirtualLink.trim() || undefined,
     };
     if (editingEventId) {
@@ -270,6 +272,7 @@ export const MemorialEdit: React.FC = () => {
     setNewEventDate("");
     setNewEventTime("");
     setNewEventLocation("");
+    setNewEventAddress("");
     setNewEventVirtualLink("");
   };
 
@@ -280,6 +283,7 @@ export const MemorialEdit: React.FC = () => {
     setNewEventDate(ev.date);
     setNewEventTime(ev.time);
     setNewEventLocation(ev.locationName);
+    setNewEventAddress(ev.address || "");
     setNewEventVirtualLink(ev.virtualLink || "");
   };
 
@@ -289,6 +293,7 @@ export const MemorialEdit: React.FC = () => {
     setNewEventDate("");
     setNewEventTime("");
     setNewEventLocation("");
+    setNewEventAddress("");
     setNewEventVirtualLink("");
   };
 
@@ -298,6 +303,9 @@ export const MemorialEdit: React.FC = () => {
       `${ev.title} — en memoria de ${formData.personName}`,
       `${ev.date} a las ${ev.time}`,
       ev.locationName ? `Lugar: ${ev.locationName}` : "",
+      ev.locationName && ev.locationName !== "Lugar a confirmar"
+        ? `Cómo llegar: https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(ev.address || ev.locationName)}`
+        : "",
       ev.virtualLink ? `Transmisión en vivo: ${ev.virtualLink}` : "",
       `Más detalles: ${memorialUrl}`,
     ].filter(Boolean);
@@ -1532,9 +1540,19 @@ export const MemorialEdit: React.FC = () => {
                     className="w-full px-3 py-2 rounded-xl bg-white border border-[#D8CEBE] text-xs text-[#24201D]"
                   />
                 </div>
+                <div className="sm:col-span-3">
+                  <label className="block text-[#5C534B] mb-1">Dirección exacta (opcional)</label>
+                  <input
+                    type="text"
+                    value={newEventAddress}
+                    onChange={(e) => setNewEventAddress(e.target.value)}
+                    placeholder="Ej. Av. Borgoño 14500, Reñaca, Viña del Mar"
+                    className="w-full px-3 py-2 rounded-xl bg-white border border-[#D8CEBE] text-xs text-[#24201D]"
+                  />
+                </div>
               </div>
               <p className="text-[10px] text-[#8C827A] -mt-2">
-                MEMORA no transmite la ceremonia: el enlace en vivo es de tu propia cuenta de YouTube, Zoom, Meet u otra plataforma — solo lo publicamos aquí para que la familia lo encuentre.
+                La dirección exacta se usa para el botón "Cómo llegar" que verán tus invitados — si la dejas en blanco, se usa el nombre del lugar. MEMORA no transmite la ceremonia: el enlace en vivo es de tu propia cuenta de YouTube, Zoom, Meet u otra plataforma — solo lo publicamos aquí para que la familia lo encuentre.
               </p>
               <div className="flex items-center gap-3">
                 <button
