@@ -186,8 +186,18 @@ async function getPayPalAccessToken(): Promise<string> {
     headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/x-www-form-urlencoded" },
     body: "grant_type=client_credentials",
   });
-  if (!res.ok) throw new Error(`PayPal OAuth failed: ${res.status}`);
-  const data = await res.json();
+  const rawBody = await res.text();
+  if (!res.ok) {
+    console.error(`[PayPal OAuth] HTTP ${res.status} — first 500 chars:`, rawBody.slice(0, 500));
+    throw new Error(`PayPal OAuth failed: ${res.status}`);
+  }
+  let data: any;
+  try {
+    data = JSON.parse(rawBody);
+  } catch {
+    console.error(`[PayPal OAuth Non-JSON Response] HTTP ${res.status} — first 500 chars:`, rawBody.slice(0, 500));
+    throw new Error("PayPal OAuth returned a non-JSON response");
+  }
   return data.access_token;
 }
 
@@ -590,7 +600,21 @@ Genera 3 opciones de mensajes diferentes en formato JSON:
           body: urlParams.toString(),
         });
 
-        const flowData = await flowResponse.json();
+        const rawBody = await flowResponse.text();
+        let flowData: any;
+        try {
+          flowData = JSON.parse(rawBody);
+        } catch {
+          console.error(
+            `[Flow Non-JSON Response] HTTP ${flowResponse.status} from ${FLOW_BASE_URL}/payment/create — first 500 chars:`,
+            rawBody.slice(0, 500)
+          );
+          return res.status(500).json({
+            success: false,
+            error: "Flow devolvió una respuesta inesperada (no JSON). Puede ser un bloqueo de red del lado de Flow.",
+            httpStatus: flowResponse.status,
+          });
+        }
 
         if (flowData.url && flowData.token) {
           const redirectUrl = `${flowData.url}?token=${flowData.token}`;
@@ -913,7 +937,7 @@ Genera 3 opciones de mensajes diferentes en formato JSON:
 
       res.json({ success: true, orderId: orderData.id });
     } catch (err: any) {
-      console.error("Error in /api/payments/paypal/create-order:", err);
+      console.error("Error in /api/payments/paypal/create-order:", err?.message || err);
       res.status(500).json({ success: false, error: "Error interno del servidor de pagos." });
     }
   });
