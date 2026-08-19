@@ -16,6 +16,7 @@ import {
   MapPin,
   ExternalLink,
   Lock,
+  Copy,
 } from "lucide-react";
 
 interface MemorialTabsProps {
@@ -29,9 +30,49 @@ export const MemorialTabs: React.FC<MemorialTabsProps> = ({
   onOpenTributeModal,
   onOpenMediaLightbox,
 }) => {
-  const { addTributeReaction, openMemorialEdit, currentUser } = useApp();
+  const { addTributeReaction, rsvpToEvent, openMemorialEdit, currentUser, notify } = useApp();
   const [activeTab, setActiveTab] = useState<"story" | "gallery" | "timeline" | "tributes" | "family" | "events">("story");
   const [selectedAlbumFilter, setSelectedAlbumFilter] = useState<string | "all">("all");
+  const [confirmedEventIds, setConfirmedEventIds] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem(`memora_rsvp_${memorial.id}`);
+      return new Set(raw ? JSON.parse(raw) : []);
+    } catch {
+      return new Set();
+    }
+  });
+
+  const copyEventInvite = (ev: MemorialEvent) => {
+    const memorialUrl = `${window.location.origin}/m/${memorial.slug}`;
+    const dateLabel = new Date(ev.date + "T00:00:00").toLocaleDateString("es-CL", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+    const lines = [
+      `${ev.title} — en memoria de ${memorial.personName}`,
+      `${dateLabel} a las ${ev.time}`,
+      ev.locationName ? `Lugar: ${ev.locationName}` : "",
+      ev.virtualLink ? `Transmisión en vivo: ${ev.virtualLink}` : "",
+      `Más detalles: ${memorialUrl}`,
+    ].filter(Boolean);
+    navigator.clipboard.writeText(lines.join("\n"));
+    notify("success", "Invitación copiada", "Pégala en WhatsApp o envíala a la familia.");
+  };
+
+  const confirmAttendance = (eventId: string) => {
+    if (confirmedEventIds.has(eventId)) return;
+    rsvpToEvent(memorial.id, eventId);
+    setConfirmedEventIds((prev) => {
+      const next = new Set(prev).add(eventId);
+      try {
+        localStorage.setItem(`memora_rsvp_${memorial.id}`, JSON.stringify([...next]));
+      } catch {
+        // localStorage unavailable — la confirmación igual se persiste en el servidor
+      }
+      return next;
+    });
+  };
 
   const isOwner = currentUser && memorial.ownerId === currentUser.id;
 
@@ -374,9 +415,9 @@ export const MemorialTabs: React.FC<MemorialTabsProps> = ({
                     <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-80 group-hover:opacity-90 transition-opacity"></div>
                     
                     <div className="absolute bottom-3 left-3 right-3 text-white">
-                      {item.dateTaken && (
+                      {item.date && (
                         <span className="text-[10px] text-[#E7D7C1] font-light block">
-                          {item.dateTaken}
+                          {item.date}
                         </span>
                       )}
                       <h4 className="font-serif text-sm font-medium line-clamp-1">
@@ -433,13 +474,31 @@ export const MemorialTabs: React.FC<MemorialTabsProps> = ({
 
                   <div className="flex flex-col sm:flex-row gap-6 items-start">
                     {event.photoUrl && (
-                      <div className="w-full sm:w-44 h-36 rounded-2xl overflow-hidden bg-stone-100 flex-shrink-0">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onOpenMediaLightbox({
+                            id: event.id,
+                            memorialId: memorial.id,
+                            type: "photo",
+                            url: event.photoUrl!,
+                            title: event.title,
+                            description: event.description,
+                            date: event.date || event.year,
+                            uploaderName: memorial.personName,
+                            status: "approved",
+                            uploadedAt: "",
+                          })
+                        }
+                        className="w-full sm:w-44 h-36 rounded-2xl overflow-hidden bg-stone-100 flex-shrink-0 cursor-pointer"
+                        title="Ver y descargar fotografía"
+                      >
                         <img
                           src={event.photoUrl}
                           alt={event.title}
                           className="w-full h-full object-cover"
                         />
-                      </div>
+                      </button>
                     )}
                     <div className="space-y-2 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
@@ -591,7 +650,7 @@ export const MemorialTabs: React.FC<MemorialTabsProps> = ({
                 >
                   <div className="w-14 h-14 rounded-2xl overflow-hidden bg-stone-100 border border-[#D8CEBE] flex-shrink-0">
                     <img
-                      src={fam.avatarUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80"}
+                      src={fam.photoUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80"}
                       alt={fam.name}
                       className="w-full h-full object-cover"
                     />
@@ -642,27 +701,30 @@ export const MemorialTabs: React.FC<MemorialTabsProps> = ({
                 >
                   <div className="space-y-3">
                     <span className="inline-block px-3 py-1 rounded-full bg-[#FAF7F2] text-[#7A4E38] text-[10px] font-bold uppercase tracking-wider border border-[#D8CEBE]">
-                      {ev.type === "funeral"
-                        ? "Ceremonia Funeraria"
-                        : ev.type === "memorial_service"
+                      {ev.type === "ceremonia"
+                        ? "Ceremonia"
+                        : ev.type === "misa"
                         ? "Misa Conmemorativa"
+                        : ev.type === "homenaje_virtual"
+                        ? "Homenaje Virtual"
                         : "Reunión Familiar"}
                     </span>
                     <h3 className="font-serif text-2xl text-[#24201D] font-medium">{ev.title}</h3>
                     <div className="space-y-1.5 text-xs text-[#5C534B]">
                       <p className="flex items-center gap-2">
                         <Calendar className="w-4 h-4 text-[#C5A880]" />
-                        <strong>Fecha y hora:</strong> {ev.date} — {ev.time}
+                        <strong>Fecha y hora:</strong>{" "}
+                        {new Date(ev.date + "T00:00:00").toLocaleDateString("es-CL", { day: "numeric", month: "long", year: "numeric" })} — {ev.time}
                       </p>
                       <p className="flex items-center gap-2">
                         <MapPin className="w-4 h-4 text-[#C5A880]" />
-                        <strong>Lugar:</strong> {ev.location}
+                        <strong>Lugar:</strong> {ev.locationName}
                       </p>
-                      {ev.virtualMeetingUrl && (
+                      {ev.virtualLink && (
                         <p className="flex items-center gap-2">
                           <ExternalLink className="w-4 h-4 text-[#C5A880]" />
                           <a
-                            href={ev.virtualMeetingUrl}
+                            href={ev.virtualLink}
                             target="_blank"
                             rel="noreferrer"
                             className="text-[#7A4E38] underline"
@@ -681,12 +743,23 @@ export const MemorialTabs: React.FC<MemorialTabsProps> = ({
                     <span className="text-xs text-[#8C827A]">
                       {ev.rsvpCount || 0} personas confirmadas
                     </span>
-                    <button
-                      onClick={() => alert("Asistencia confirmada. Gracias por acompañar a la familia.")}
-                      className="px-5 py-2 rounded-full bg-[#24201D] text-white hover:bg-[#3D3530] text-xs font-semibold cursor-pointer"
-                    >
-                      Confirmar Asistencia
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => copyEventInvite(ev)}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-white border border-[#D8CEBE] text-[#24201D] hover:border-[#C5A880] text-xs font-semibold cursor-pointer"
+                        title="Copiar invitación para compartir"
+                      >
+                        <Copy className="w-3.5 h-3.5 text-[#C5A880]" />
+                        <span>Copiar invitación</span>
+                      </button>
+                      <button
+                        onClick={() => confirmAttendance(ev.id)}
+                        disabled={confirmedEventIds.has(ev.id)}
+                        className="px-5 py-2 rounded-full bg-[#24201D] text-white hover:bg-[#3D3530] text-xs font-semibold cursor-pointer disabled:opacity-50 disabled:cursor-default"
+                      >
+                        {confirmedEventIds.has(ev.id) ? "Asistencia confirmada ✓" : "Confirmar Asistencia"}
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))

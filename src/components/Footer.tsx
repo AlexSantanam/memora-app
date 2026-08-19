@@ -29,6 +29,12 @@ export const Footer: React.FC = () => {
             onClick={() => {
               if (isAuthenticated) {
                 setCurrentView("wizard");
+                // Deferred: called synchronously here, the page is still the
+                // long landing page mid-render, so an immediate smooth scroll
+                // gets interrupted once React swaps in the (much shorter)
+                // wizard content a moment later — the user ends up stranded
+                // mid-page instead of at the top of the wizard.
+                setTimeout(() => window.scrollTo(0, 0), 0);
               } else {
                 setAuthModalMode("register");
                 setIsAuthModalOpen(true);

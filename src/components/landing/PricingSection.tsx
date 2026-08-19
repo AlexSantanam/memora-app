@@ -324,18 +324,6 @@ export const PricingSection: React.FC = () => {
                   <td className="py-3.5 px-3 text-center bg-[#FAF7F2]"><Check className="w-4 h-4 text-emerald-600 mx-auto" /></td>
                   <td className="py-3.5 pl-3 text-center"><Check className="w-4 h-4 text-emerald-600 mx-auto" /></td>
                 </tr>
-                <tr>
-                  <td className="py-3.5 pr-4 font-medium text-[#24201D]">Funciones familiares avanzadas</td>
-                  <td className="py-3.5 px-3 text-center text-[#8C827A]">—</td>
-                  <td className="py-3.5 px-3 text-center bg-[#FAF7F2]"><Check className="w-4 h-4 text-emerald-600 mx-auto" /></td>
-                  <td className="py-3.5 pl-3 text-center"><Check className="w-4 h-4 text-emerald-600 mx-auto" /></td>
-                </tr>
-                <tr>
-                  <td className="py-3.5 pr-4 font-medium text-[#24201D]">Funciones premium prioritarias</td>
-                  <td className="py-3.5 px-3 text-center text-[#8C827A]">—</td>
-                  <td className="py-3.5 px-3 text-center text-[#8C827A] bg-[#FAF7F2]">—</td>
-                  <td className="py-3.5 pl-3 text-center"><Check className="w-4 h-4 text-emerald-600 mx-auto" /></td>
-                </tr>
               </tbody>
             </table>
           </div>
@@ -362,10 +350,10 @@ export const PricingSection: React.FC = () => {
             </div>
           </div>
           <button
-            onClick={() => handleSelectPlan("familia")}
+            onClick={() => document.getElementById("planes")?.scrollIntoView({ behavior: "smooth" })}
             className="px-6 py-3 rounded-full bg-[#24201D] text-white hover:bg-[#3D3530] text-xs font-semibold flex-shrink-0 transition-colors cursor-pointer whitespace-nowrap"
           >
-            Elegir Plan Familia
+            Ver todos los planes
           </button>
         </div>
 

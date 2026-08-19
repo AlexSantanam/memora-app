@@ -28,9 +28,13 @@ export const WhatsAppFloatingWidget: React.FC = () => {
     return null;
   }
 
+  // En el memorial hay una barra de acciones flotante (Homenaje/Compartir/Imprimir)
+  // en la misma esquina — se sube el widget para que no la tape y bloquee sus clics.
+  const bottomOffsetClass = currentView === "memorial-view" ? "bottom-24 sm:bottom-28" : "bottom-5";
+
   return (
     <div
-      className="fixed bottom-5 right-5 z-40 flex items-center gap-2 group print:hidden"
+      className={`fixed ${bottomOffsetClass} right-5 z-40 flex items-center gap-2 group print:hidden`}
       id="whatsapp-floating-widget"
     >
       {/* Tooltip on desktop hover */}

@@ -12,7 +12,7 @@ export const StoryCompositionSection: React.FC = () => {
       title: "Su primera vocación",
       text: "Graduada como profesora con honores. Comenzó a enseñar a leer a cientos de niños de la costa.",
       location: "Viña del Mar",
-      image: "https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=600&q=80",
+      image: "https://images.unsplash.com/photo-1578593139939-cccb1e98698c?auto=format&fit=crop&w=600&q=80",
     },
     {
       year: "1965",
@@ -28,7 +28,7 @@ export const StoryCompositionSection: React.FC = () => {
       title: "El viaje soñado al Sur",
       text: "Navegando los lagos del sur de Chile junto a sus hijos y nietos mayores, cantando bajo la lluvia.",
       location: "Puerto Varas & Chiloé",
-      image: "https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?auto=format&fit=crop&w=600&q=80",
+      image: "https://images.unsplash.com/photo-1758409571024-20dcf43d52bf?auto=format&fit=crop&w=600&q=80",
     },
   ];
 

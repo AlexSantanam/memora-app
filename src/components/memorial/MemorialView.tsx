@@ -44,10 +44,7 @@ export const MemorialView: React.FC = () => {
   }
 
   // Password Protection Gate
-  const isProtected =
-    (currentMemorial.privacy === "password" || (currentMemorial.privacy as string) === "protected") &&
-    currentMemorial.password &&
-    !isUnlocked;
+  const isProtected = currentMemorial.privacy === "password" && currentMemorial.password && !isUnlocked;
 
   const handleUnlock = (e: React.FormEvent) => {
     e.preventDefault();
@@ -133,6 +130,7 @@ export const MemorialView: React.FC = () => {
         memorial={currentMemorial}
         onOpenTributeModal={() => setIsTributeModalOpen(true)}
         onOpenShareModal={() => setActiveShareMemorial(currentMemorial)}
+        onOpenMediaLightbox={(item) => setSelectedLightboxItem(item)}
       />
 
       {/* Main Memorial Tabs Content */}
@@ -174,12 +172,11 @@ export const MemorialView: React.FC = () => {
       </div>
 
       {/* Modals */}
-      {isTributeModalOpen && (
-        <TributeModal
-          memorial={currentMemorial}
-          onClose={() => setIsTributeModalOpen(false)}
-        />
-      )}
+      <TributeModal
+        memorial={currentMemorial}
+        isOpen={isTributeModalOpen}
+        onClose={() => setIsTributeModalOpen(false)}
+      />
 
       {activeShareMemorial && (
         <ShareModal
@@ -188,13 +185,11 @@ export const MemorialView: React.FC = () => {
         />
       )}
 
-      {selectedLightboxItem && (
-        <MediaLightboxModal
-          item={selectedLightboxItem}
-          memorial={currentMemorial}
-          onClose={() => setSelectedLightboxItem(null)}
-        />
-      )}
+      <MediaLightboxModal
+        item={selectedLightboxItem}
+        isOpen={!!selectedLightboxItem}
+        onClose={() => setSelectedLightboxItem(null)}
+      />
     </div>
   );
 };

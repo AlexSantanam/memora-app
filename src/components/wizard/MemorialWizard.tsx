@@ -545,6 +545,16 @@ export const MemorialWizard: React.FC = () => {
                             </button>
                           ))}
                         </div>
+                        <input
+                          type="text"
+                          value={formData.species}
+                          onChange={(e) => setFormData({ ...formData, species: e.target.value })}
+                          placeholder="O escribe algo más personal: 'nuestro hijo peludo', 'compañero de vida'..."
+                          className="w-full mt-2.5 px-4 py-2.5 rounded-2xl bg-[#FAF7F2] border border-[#D8CEBE] focus:outline-none focus:border-[#C5A880] text-xs text-[#24201D]"
+                        />
+                        <p className="text-[10px] text-[#8C827A] mt-1">
+                          Esta etiqueta es opcional — puedes dejarla en blanco si prefieres no categorizarlo.
+                        </p>
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
@@ -1145,7 +1155,7 @@ export const MemorialWizard: React.FC = () => {
                         icon: Globe,
                       },
                       {
-                        id: "protected",
+                        id: "password",
                         title: "Protegido por Clave",
                         desc: "Requiere contraseña para ver las fotos y recuerdos.",
                         icon: KeyRound,
@@ -1191,7 +1201,7 @@ export const MemorialWizard: React.FC = () => {
                     })}
                   </div>
 
-                  {formData.privacy === "protected" && (
+                  {formData.privacy === "password" && (
                     <div className="p-4 rounded-2xl bg-[#FAF7F2] border border-[#D8CEBE] space-y-2">
                       <label className="block text-xs font-semibold text-[#24201D] uppercase tracking-wider">
                         Contraseña del Memorial

@@ -13,8 +13,8 @@ export const FAQSection: React.FC = () => {
       a: "MEMORA es un santuario digital dedicado a la memoria, el homenaje y el legado permanente. A diferencia de las redes sociales convencionales, MEMORA no tiene publicidad, algoritmos de distracción ni contenido efímero. Es un espacio íntimo, respetuoso y diseñado para celebrar una vida con la solemnidad y belleza que merece.",
     },
     {
-      q: "¿El memorial realmente dura para siempre con un solo pago?",
-      a: "Sí. Con los planes 'Para Siempre' y 'Acompañado' realizas un único pago inicial y el espacio digital de tu ser querido se mantiene activo y preservado de forma indefinida, sin cobros recurrentes sorpresa ni renovaciones anuales.",
+      q: "¿Es un pago único o tiene que renovarse?",
+      a: "Todos los planes (Esencial, Familia y Legado) son de renovación anual, al mismo precio con el que contrataste — sin sorpresas ni alzas. Mientras el plan esté activo, el memorial permanece disponible, protegido y accesible para toda tu familia.",
     },
     {
       q: "¿Cómo funciona la privacidad y quién puede ver el memorial?",
@@ -33,8 +33,8 @@ export const FAQSection: React.FC = () => {
       a: "Cada memorial genera automáticamente un Código QR de alta resolución listo para imprimir en recordatorios funerarios, libros de firmas o placas conmemorativas. Cualquier persona puede escanearlo con la cámara de su teléfono para ingresar directamente al memorial digital sin necesidad de descargar ninguna aplicación.",
     },
     {
-      q: "¿Puedo exportar o descargar todos los recuerdos si lo necesito?",
-      a: "Absolutamente. Puedes descargar un archivo completo con todas las fotografías, cartas, homenajes y datos biográficos recopilados para guardarlos en tu propio computador o memoria USB.",
+      q: "¿Puedo descargar las fotos que subí?",
+      a: "Sí. Cada fotografía se puede descargar individualmente en su tamaño original desde el visualizador ampliado, con un solo clic — igual que en cualquier galería.",
     },
     {
       q: "¿Qué incluye el servicio Concierge del Plan Acompañado?",

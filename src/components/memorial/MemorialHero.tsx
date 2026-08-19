@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Memorial } from "../../types";
+import { Memorial, MediaItem } from "../../types";
 import { useApp } from "../../context/AppContext";
 import {
   Heart,
@@ -14,6 +14,7 @@ import {
   MapPin,
   Sparkles,
   Printer,
+  Download,
 } from "lucide-react";
 
 interface MemorialHeroProps {
@@ -21,6 +22,7 @@ interface MemorialHeroProps {
   onOpenTributeModal: () => void;
   onOpenShareModal: () => void;
   onOpenQRModal?: () => void;
+  onOpenMediaLightbox?: (item: MediaItem) => void;
 }
 
 export const MemorialHero: React.FC<MemorialHeroProps> = ({
@@ -28,6 +30,7 @@ export const MemorialHero: React.FC<MemorialHeroProps> = ({
   onOpenTributeModal,
   onOpenShareModal,
   onOpenQRModal,
+  onOpenMediaLightbox,
 }) => {
   const { openMemorialEdit, currentUser, setActivePrintableMemorial } = useApp();
   const [isPlayingMusic, setIsPlayingMusic] = useState(false);
@@ -39,6 +42,20 @@ export const MemorialHero: React.FC<MemorialHeroProps> = ({
     currentUser &&
     (memorial.ownerId === currentUser.id ||
       memorial.collaborators?.some((c) => c.email === currentUser.email));
+
+  const openPhotoDownload = (url: string, title: string) => {
+    if (!onOpenMediaLightbox || !url) return;
+    onOpenMediaLightbox({
+      id: `${memorial.id}-${title}`,
+      memorialId: memorial.id,
+      type: "photo",
+      url,
+      title,
+      uploaderName: memorial.personName,
+      status: "approved",
+      uploadedAt: "",
+    });
+  };
 
   const totalTributesCount = memorial.tributes?.filter((t) => t.status === "approved").length || 0;
   const totalCandles = memorial.tributes?.filter((t) => t.candleLit).length || 0;
@@ -109,6 +126,18 @@ export const MemorialHero: React.FC<MemorialHeroProps> = ({
           className="w-full h-full object-cover object-center filter brightness-[0.88]"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-[#24201D]/90 via-[#24201D]/30 to-black/20"></div>
+
+        {onOpenMediaLightbox && memorial.coverPhoto && (
+          <button
+            type="button"
+            onClick={() => openPhotoDownload(memorial.coverPhoto!, `Foto de portada de ${memorial.personName}`)}
+            className="absolute bottom-4 right-4 sm:bottom-6 sm:right-8 z-10 w-9 h-9 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-sm text-white flex items-center justify-center transition-colors cursor-pointer"
+            aria-label="Ver y descargar foto de portada"
+            title="Ver y descargar foto de portada"
+          >
+            <Download className="w-4 h-4" />
+          </button>
+        )}
 
         {/* Top Control Bar Over Cover */}
         <div className="absolute top-4 sm:top-6 left-4 sm:left-8 right-4 sm:right-8 flex items-center justify-between z-10">
@@ -208,20 +237,42 @@ export const MemorialHero: React.FC<MemorialHeroProps> = ({
           <div className="flex flex-col sm:flex-row items-center sm:items-start text-center sm:text-left gap-5 sm:gap-6">
             
             {/* Portrait Frame */}
-            <div className="relative w-32 h-32 sm:w-40 sm:h-40 rounded-3xl overflow-hidden bg-white p-1 shadow-xl border-2 border-[#C5A880] flex-shrink-0">
-              <img
-                src={memorial.mainPhoto}
-                alt={memorial.personName}
-                className="w-full h-full object-cover rounded-2xl"
-              />
-            </div>
+            {onOpenMediaLightbox && memorial.mainPhoto ? (
+              <button
+                type="button"
+                onClick={() => openPhotoDownload(memorial.mainPhoto!, `Foto de perfil de ${memorial.personName}`)}
+                className="group relative w-32 h-32 sm:w-40 sm:h-40 rounded-3xl overflow-hidden bg-white p-1 shadow-xl border-2 border-[#C5A880] flex-shrink-0 cursor-pointer"
+                aria-label="Ver foto de perfil en grande"
+                title="Ver foto de perfil en grande"
+              >
+                <img
+                  src={memorial.mainPhoto}
+                  alt={memorial.personName}
+                  className="w-full h-full object-cover rounded-2xl"
+                />
+                <div className="absolute inset-1 rounded-2xl bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
+                  <Download className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                </div>
+              </button>
+            ) : (
+              <div className="relative w-32 h-32 sm:w-40 sm:h-40 rounded-3xl overflow-hidden bg-white p-1 shadow-xl border-2 border-[#C5A880] flex-shrink-0">
+                <img
+                  src={memorial.mainPhoto}
+                  alt={memorial.personName}
+                  className="w-full h-full object-cover rounded-2xl"
+                />
+              </div>
+            )}
 
             {/* Titles & Nickname */}
             <div className="space-y-1.5 pt-2 sm:pt-20">
-              {memorial.type === "pet" && (
+              {memorial.type === "pet" && (memorial.species || memorial.breed) && (
                 <div className="flex items-center justify-center sm:justify-start gap-2 mb-1">
-                  <span className="text-[11px] font-bold uppercase tracking-wider px-3 py-0.5 rounded-full bg-[#EAE3D9] text-[#7A4E38] border border-[#D8CEBE]">
-                    🐾 {memorial.species ? memorial.species.toUpperCase() : "MASCOTA"}
+                  <span className="text-[11px] font-semibold tracking-wide px-3 py-0.5 rounded-full bg-[#EAE3D9] text-[#7A4E38] border border-[#D8CEBE]">
+                    🐾{" "}
+                    {["perro", "gato", "ave", "conejo", "caballo"].includes(memorial.species || "")
+                      ? memorial.species!.toUpperCase()
+                      : memorial.species || ""}
                     {memorial.breed ? ` · ${memorial.breed}` : ""}
                   </span>
                 </div>

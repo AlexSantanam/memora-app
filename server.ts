@@ -318,7 +318,7 @@ Devuelve la respuesta en formato JSON con la siguiente estructura exacta:
       if (process.env.GEMINI_API_KEY) {
         try {
           const response = await ai.models.generateContent({
-            model: "gemini-3.7-flash",
+            model: "gemini-3.5-flash",
             contents: prompt,
             config: {
               responseMimeType: "application/json",
@@ -437,7 +437,7 @@ Genera 3 opciones de mensajes diferentes en formato JSON:
       if (process.env.GEMINI_API_KEY) {
         try {
           const response = await ai.models.generateContent({
-            model: "gemini-3.7-flash",
+            model: "gemini-3.5-flash",
             contents: prompt,
             config: {
               responseMimeType: "application/json",

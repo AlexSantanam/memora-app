@@ -72,11 +72,11 @@ interface AppContextType {
   setCurrentView: (view: AppView) => void;
   selectedMemorialSlug: string | null;
   selectedMemorialId: string | null;
-  activeEditTab: "general" | "story" | "media" | "timeline" | "collaborators" | "tributes" | "privacy" | "qr";
-  setActiveEditTab: (tab: "general" | "story" | "media" | "timeline" | "collaborators" | "tributes" | "privacy" | "qr") => void;
+  activeEditTab: "general" | "story" | "media" | "timeline" | "family" | "events" | "collaborators" | "tributes" | "privacy" | "qr";
+  setActiveEditTab: (tab: "general" | "story" | "media" | "timeline" | "family" | "events" | "collaborators" | "tributes" | "privacy" | "qr") => void;
   openMemorialBySlug: (slug: string) => void;
   openMemorialById: (id: string) => void;
-  openMemorialEdit: (id: string, tab?: "general" | "story" | "media" | "timeline" | "collaborators" | "tributes" | "privacy" | "qr") => void;
+  openMemorialEdit: (id: string, tab?: "general" | "story" | "media" | "timeline" | "family" | "events" | "collaborators" | "tributes" | "privacy" | "qr") => void;
   dashboardTab: "memorials" | "billing" | "security";
   setDashboardTab: (tab: "memorials" | "billing" | "security") => void;
   openMyProfile: () => void;
@@ -120,6 +120,9 @@ interface AppContextType {
   addFamilyMember: (memorialId: string, memberData: Omit<FamilyMember, "id">) => void;
   deleteFamilyMember: (memorialId: string, memberId: string) => void;
   addEvent: (memorialId: string, eventData: Omit<MemorialEvent, "id" | "rsvpCount">) => void;
+  updateEvent: (memorialId: string, eventId: string, updates: Omit<MemorialEvent, "id" | "memorialId" | "rsvpCount">) => void;
+  deleteEvent: (memorialId: string, eventId: string) => void;
+  rsvpToEvent: (memorialId: string, eventId: string) => void;
   inviteCollaborator: (memorialId: string, name: string, email: string, role: any) => void;
   removeCollaborator: (memorialId: string, collaboratorId: string) => void;
 
@@ -329,7 +332,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [currentView, setCurrentView] = useState<AppView>("landing");
   const [selectedMemorialSlug, setSelectedMemorialSlug] = useState<string | null>(null);
   const [selectedMemorialId, setSelectedMemorialId] = useState<string | null>(null);
-  const [activeEditTab, setActiveEditTab] = useState<"general" | "story" | "media" | "timeline" | "collaborators" | "tributes" | "privacy" | "qr">("general");
+  const [activeEditTab, setActiveEditTab] = useState<"general" | "story" | "media" | "timeline" | "family" | "events" | "collaborators" | "tributes" | "privacy" | "qr">("general");
   const [dashboardTab, setDashboardTab] = useState<"memorials" | "billing" | "security">("memorials");
 
   // Jumps straight to the "Mi Perfil" tab in the dashboard — used by the
@@ -897,7 +900,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const openMemorialEdit = (
     id: string,
-    tab: "general" | "story" | "media" | "timeline" | "collaborators" | "tributes" | "privacy" | "qr" = "general"
+    tab: "general" | "story" | "media" | "timeline" | "family" | "events" | "collaborators" | "tributes" | "privacy" | "qr" = "general"
   ) => {
     setSelectedMemorialId(id);
     setActiveEditTab(tab);
@@ -1154,6 +1157,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
+  // Usa la función rsvp_to_event (SECURITY DEFINER) porque la política RLS
+  // de UPDATE en "memorial_events" solo permite escribir a owner/admin —
+  // confirmar asistencia debe poder hacerlo cualquier visitante que vea el memorial.
+  const rsvpToEvent = (memorialId: string, eventId: string) => {
+    setMemorials((prev) =>
+      prev.map((m) => {
+        if (m.id !== memorialId) return m;
+        return {
+          ...m,
+          events: m.events.map((e) => (e.id === eventId ? { ...e, rsvpCount: (e.rsvpCount || 0) + 1 } : e)),
+        };
+      })
+    );
+    supabase.rpc("rsvp_to_event", { p_event_id: eventId }).then(({ error }) => {
+      if (error) console.error("rsvp_to_event failed:", error.message);
+    });
+  };
+
   // Add Media Item with Shared-Bag Storage Limit Check
   const addMediaItem = (
     memorialId: string,
@@ -1380,6 +1401,46 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setMemorials((prev) => prev.map((m) => (m.id === memorialId ? { ...m, events: m.events.map((e) => (e.id === tempId ? realEvent : e)) } : m)));
       });
     notify("success", "Ceremonia o evento añadido", eventData.title);
+  };
+
+  const updateEvent = (
+    memorialId: string,
+    eventId: string,
+    updates: Omit<MemorialEvent, "id" | "memorialId" | "rsvpCount">
+  ) => {
+    setMemorials((prev) =>
+      prev.map((m) =>
+        m.id === memorialId
+          ? { ...m, events: m.events.map((e) => (e.id === eventId ? { ...e, ...updates } : e)) }
+          : m
+      )
+    );
+    supabase
+      .from("memorial_events")
+      .update({
+        title: updates.title,
+        type: updates.type,
+        date: updates.date,
+        time: updates.time,
+        location_name: updates.locationName,
+        address: updates.address || null,
+        virtual_link: updates.virtualLink || null,
+        description: updates.description || null,
+      })
+      .eq("id", eventId)
+      .then(({ error }) => {
+        if (error) notify("error", "No se pudo actualizar la ceremonia", error.message);
+      });
+    notify("success", "Ceremonia actualizada", updates.title);
+  };
+
+  const deleteEvent = (memorialId: string, eventId: string) => {
+    setMemorials((prev) =>
+      prev.map((m) => (m.id === memorialId ? { ...m, events: m.events.filter((e) => e.id !== eventId) } : m))
+    );
+    supabase.from("memorial_events").delete().eq("id", eventId).then(({ error }) => {
+      if (error) notify("error", "No se pudo eliminar en el servidor", error.message);
+    });
   };
 
   const inviteCollaborator = (memorialId: string, name: string, email: string, role: any) => {
@@ -1647,6 +1708,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addFamilyMember,
         deleteFamilyMember,
         addEvent,
+        updateEvent,
+        deleteEvent,
+        rsvpToEvent,
         inviteCollaborator,
         removeCollaborator,
 

@@ -980,19 +980,6 @@ export const UserDashboard: React.FC = () => {
                 </div>
 
                 <div className="pt-4 border-t border-[#F4EFEA]">
-                  <h4 className="font-semibold text-[#24201D] mb-1">Descarga Completa de Archivos</h4>
-                  <p className="mb-3">
-                    Puedes descargar una copia de seguridad con todos los textos, imágenes y tributos asociados a tu cuenta.
-                  </p>
-                  <button
-                    onClick={() => notify("success", "Exportación iniciada", "Se ha generado el paquete de descarga.")}
-                    className="px-4 py-2 rounded-xl bg-[#FAF7F2] hover:bg-[#F4EFEA] border border-[#D8CEBE] text-xs font-semibold text-[#24201D] cursor-pointer"
-                  >
-                    Descargar todos mis datos (.zip)
-                  </button>
-                </div>
-
-                <div className="pt-4 border-t border-[#F4EFEA]">
                   <h4 className="font-semibold text-red-600 mb-1">Eliminación de Cuenta</h4>
                   <p className="mb-3">
                     Si deseas cerrar tu cuenta de forma definitiva y borrar todos los memoriales asociados de nuestros servidores, puedes solicitarlo directamente.

@@ -30,6 +30,8 @@ import {
   Printer,
   Camera,
   Video,
+  Copy,
+  Edit3,
 } from "lucide-react";
 import QRCode from "qrcode";
 
@@ -52,6 +54,8 @@ export const MemorialEdit: React.FC = () => {
     addFamilyMember,
     deleteFamilyMember,
     addEvent,
+    updateEvent,
+    deleteEvent,
     inviteCollaborator,
     removeCollaborator,
     notify,
@@ -86,6 +90,7 @@ export const MemorialEdit: React.FC = () => {
     currentMemorial.ownerId !== currentUser.id &&
     !currentMemorial.collaborators?.some((c) => c.email === currentUser.email);
 
+  const activeEditTabRef = useRef<HTMLButtonElement>(null);
   const editMainPhotoRef = useRef<HTMLInputElement>(null);
   const editCoverPhotoRef = useRef<HTMLInputElement>(null);
   const editGalleryPhotoRef = useRef<HTMLInputElement>(null);
@@ -114,7 +119,9 @@ export const MemorialEdit: React.FC = () => {
   const [newEventDate, setNewEventDate] = useState("");
   const [newEventTime, setNewEventTime] = useState("");
   const [newEventLocation, setNewEventLocation] = useState("");
+  const [newEventVirtualLink, setNewEventVirtualLink] = useState("");
   const [newEventType, setNewEventType] = useState<MemorialEvent["type"]>("ceremonia");
+  const [editingEventId, setEditingEventId] = useState<string | null>(null);
 
   const [newCollabName, setNewCollabName] = useState("");
   const [newCollabEmail, setNewCollabEmail] = useState("");
@@ -122,6 +129,12 @@ export const MemorialEdit: React.FC = () => {
 
   // QR Code Canvas / Export
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>("");
+
+  // La barra de pestañas se desborda horizontalmente (10 pestañas) — sin esto,
+  // la pestaña activa puede quedar oculta fuera del área visible del scroll.
+  React.useEffect(() => {
+    activeEditTabRef.current?.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" });
+  }, [activeEditTab]);
 
   React.useEffect(() => {
     const memorialUrl = `${window.location.origin}/memorial/${formData.slug}`;
@@ -238,18 +251,58 @@ export const MemorialEdit: React.FC = () => {
   const handleAddNewEvent = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newEventTitle || !newEventDate) return;
-    addEvent(formData.id, {
+    const eventPayload = {
       memorialId: formData.id,
       title: newEventTitle,
       type: newEventType,
       date: newEventDate,
       time: newEventTime || "12:00",
       locationName: newEventLocation || "Lugar a confirmar",
-    });
+      virtualLink: newEventVirtualLink.trim() || undefined,
+    };
+    if (editingEventId) {
+      updateEvent(formData.id, editingEventId, eventPayload);
+      setEditingEventId(null);
+    } else {
+      addEvent(formData.id, eventPayload);
+    }
     setNewEventEventTitle("");
     setNewEventDate("");
     setNewEventTime("");
     setNewEventLocation("");
+    setNewEventVirtualLink("");
+  };
+
+  const startEditEvent = (ev: MemorialEvent) => {
+    setEditingEventId(ev.id);
+    setNewEventEventTitle(ev.title);
+    setNewEventType(ev.type);
+    setNewEventDate(ev.date);
+    setNewEventTime(ev.time);
+    setNewEventLocation(ev.locationName);
+    setNewEventVirtualLink(ev.virtualLink || "");
+  };
+
+  const cancelEditEvent = () => {
+    setEditingEventId(null);
+    setNewEventEventTitle("");
+    setNewEventDate("");
+    setNewEventTime("");
+    setNewEventLocation("");
+    setNewEventVirtualLink("");
+  };
+
+  const copyEventInvite = (ev: MemorialEvent) => {
+    const memorialUrl = `${window.location.origin}/m/${formData.slug}`;
+    const lines = [
+      `${ev.title} — en memoria de ${formData.personName}`,
+      `${ev.date} a las ${ev.time}`,
+      ev.locationName ? `Lugar: ${ev.locationName}` : "",
+      ev.virtualLink ? `Transmisión en vivo: ${ev.virtualLink}` : "",
+      `Más detalles: ${memorialUrl}`,
+    ].filter(Boolean);
+    navigator.clipboard.writeText(lines.join("\n"));
+    notify("success", "Invitación copiada", "Pégala en WhatsApp o envíala a la familia.");
   };
 
   const handleInviteCollab = (e: React.FormEvent) => {
@@ -261,16 +314,16 @@ export const MemorialEdit: React.FC = () => {
   };
 
   const navTabs = [
-    { id: "general", label: "Datos Básicos", icon: Heart },
-    { id: "story", label: "Historia & IA", icon: BookOpen },
-    { id: "media", label: "Galería & Fotos", icon: ImageIcon, count: currentMemorial.media?.length },
+    { id: "general", label: "Datos", icon: Heart },
+    { id: "story", label: "Historia", icon: BookOpen },
+    { id: "media", label: "Galería", icon: ImageIcon, count: currentMemorial.media?.length },
     { id: "timeline", label: "Línea de Tiempo", icon: Clock, count: currentMemorial.timeline?.length },
-    { id: "tributes", label: "Moderación Homenajes", icon: Shield, count: currentMemorial.tributes?.length },
+    { id: "tributes", label: "Homenajes", icon: Shield, count: currentMemorial.tributes?.length },
     { id: "family", label: "Familia", icon: Users2, count: currentMemorial.family?.length },
     { id: "events", label: "Ceremonias", icon: Calendar, count: currentMemorial.events?.length },
     { id: "collaborators", label: "Colaboradores", icon: Users2, count: currentMemorial.collaborators?.length },
     { id: "privacy", label: "Privacidad", icon: Lock },
-    { id: "qr", label: "Placa QR & Exportar", icon: QrCode },
+    { id: "qr", label: "QR", icon: QrCode },
   ];
 
   return (
@@ -339,25 +392,27 @@ export const MemorialEdit: React.FC = () => {
         </div>
 
         {/* Tab Selector Nav */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
+        <div className="relative">
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-2 scrollbar-none">
           {navTabs.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeEditTab === tab.id;
             return (
               <button
                 key={tab.id}
+                ref={isActive ? activeEditTabRef : undefined}
                 onClick={() => setActiveEditTab(tab.id as any)}
-                className={`px-4 py-2 rounded-full text-xs font-medium transition-all flex items-center gap-1.5 flex-shrink-0 cursor-pointer ${
+                className={`px-2.5 py-1.5 rounded-full text-[11px] font-medium transition-all flex items-center gap-1 flex-shrink-0 cursor-pointer ${
                   isActive
                     ? "bg-[#24201D] text-white shadow-xs"
                     : "bg-white text-[#5C534B] hover:bg-[#F4EFEA] border border-[#EAE3D9]"
                 }`}
               >
-                <Icon className={`w-3.5 h-3.5 ${isActive ? "text-[#C5A880]" : "text-[#8C827A]"}`} />
+                <Icon className={`w-3 h-3 ${isActive ? "text-[#C5A880]" : "text-[#8C827A]"}`} />
                 <span>{tab.label}</span>
                 {tab.count !== undefined && (
                   <span
-                    className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                    className={`text-[9px] px-1 py-0.2 rounded-full ${
                       isActive ? "bg-white/20 text-white" : "bg-[#FAF7F2] text-[#7A4E38]"
                     }`}
                   >
@@ -367,6 +422,9 @@ export const MemorialEdit: React.FC = () => {
               </button>
             );
           })}
+          </div>
+          <div className="pointer-events-none absolute top-0 bottom-2 left-0 w-8 bg-gradient-to-r from-[#FAF7F2] to-transparent" />
+          <div className="pointer-events-none absolute top-0 bottom-2 right-0 w-8 bg-gradient-to-l from-[#FAF7F2] to-transparent" />
         </div>
 
         {/* TAB 1: DATOS GENERALES */}
@@ -427,17 +485,24 @@ export const MemorialEdit: React.FC = () => {
                       Especie
                     </label>
                     <select
-                      value={formData.species || "perro"}
+                      value={["perro", "gato", "ave", "conejo", "caballo"].includes(formData.species || "") ? formData.species : ""}
                       onChange={(e) => setFormData({ ...formData, species: e.target.value as any })}
                       className="w-full px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#D8CEBE] text-xs text-[#24201D]"
                     >
+                      <option value="">Prefiero no mostrar etiqueta</option>
                       <option value="perro">Perro 🐕</option>
                       <option value="gato">Gato 🐈</option>
                       <option value="ave">Ave 🦜</option>
                       <option value="conejo">Conejo 🐇</option>
                       <option value="caballo">Caballo 🐎</option>
-                      <option value="otro">Otro ser querido</option>
                     </select>
+                    <input
+                      type="text"
+                      value={formData.species || ""}
+                      onChange={(e) => setFormData({ ...formData, species: e.target.value as any })}
+                      placeholder="O escribe algo más personal: 'nuestro hijo peludo'..."
+                      className="w-full mt-2 px-4 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#D8CEBE] text-xs text-[#24201D]"
+                    />
                   </div>
 
                   <div>
@@ -1401,7 +1466,7 @@ export const MemorialEdit: React.FC = () => {
             <form onSubmit={handleAddNewEvent} className="p-5 rounded-2xl bg-[#FAF7F2] border border-[#D8CEBE] space-y-4 text-xs">
               <h4 className="font-bold text-[#24201D] uppercase tracking-wider flex items-center gap-1.5">
                 <Plus className="w-3.5 h-3.5 text-[#C5A880]" />
-                Agregar Ceremonia o Homenaje
+                {editingEventId ? "Editar Ceremonia" : "Agregar Ceremonia o Homenaje"}
               </h4>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
@@ -1448,34 +1513,97 @@ export const MemorialEdit: React.FC = () => {
                   />
                 </div>
                 <div className="sm:col-span-2">
-                  <label className="block text-[#5C534B] mb-1">Lugar o Enlace Virtual</label>
+                  <label className="block text-[#5C534B] mb-1">Lugar</label>
                   <input
                     type="text"
                     value={newEventLocation}
                     onChange={(e) => setNewEventLocation(e.target.value)}
-                    placeholder="Ej. Parroquia San Pedro o Enlace de Zoom"
+                    placeholder="Ej. Parroquia San Pedro de Reñaca"
+                    className="w-full px-3 py-2 rounded-xl bg-white border border-[#D8CEBE] text-xs text-[#24201D]"
+                  />
+                </div>
+                <div className="sm:col-span-1">
+                  <label className="block text-[#5C534B] mb-1">Enlace en vivo (opcional)</label>
+                  <input
+                    type="url"
+                    value={newEventVirtualLink}
+                    onChange={(e) => setNewEventVirtualLink(e.target.value)}
+                    placeholder="Ej. link de YouTube, Zoom o Meet"
                     className="w-full px-3 py-2 rounded-xl bg-white border border-[#D8CEBE] text-xs text-[#24201D]"
                   />
                 </div>
               </div>
-              <button
-                type="submit"
-                className="px-6 py-2.5 rounded-full bg-[#24201D] text-white font-semibold hover:bg-[#3D3530] transition-colors"
-              >
-                Publicar Ceremonia
-              </button>
+              <p className="text-[10px] text-[#8C827A] -mt-2">
+                MEMORA no transmite la ceremonia: el enlace en vivo es de tu propia cuenta de YouTube, Zoom, Meet u otra plataforma — solo lo publicamos aquí para que la familia lo encuentre.
+              </p>
+              <div className="flex items-center gap-3">
+                <button
+                  type="submit"
+                  className="px-6 py-2.5 rounded-full bg-[#24201D] text-white font-semibold hover:bg-[#3D3530] transition-colors"
+                >
+                  {editingEventId ? "Guardar Cambios" : "Publicar Ceremonia"}
+                </button>
+                {editingEventId && (
+                  <button
+                    type="button"
+                    onClick={cancelEditEvent}
+                    className="px-5 py-2.5 rounded-full bg-white border border-[#D8CEBE] text-[#5C534B] font-semibold hover:bg-[#F4EFEA] transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                )}
+              </div>
             </form>
 
             <div className="space-y-3 pt-4 border-t border-[#F4EFEA]">
               <h3 className="font-serif text-lg text-[#24201D] font-medium">Ceremonias Programadas</h3>
-              {currentMemorial.events?.map((ev) => (
-                <div key={ev.id} className="p-4 rounded-2xl bg-[#FAF7F2] border border-[#EAE3D9] text-xs space-y-1">
-                  <span className="font-bold text-[#24201D] text-sm">{ev.title}</span>
-                  <p className="text-[#5C534B]">
-                    {ev.date} a las {ev.time} — <strong>{ev.locationName}</strong>
-                  </p>
-                </div>
-              ))}
+              {currentMemorial.events && currentMemorial.events.length > 0 ? (
+                currentMemorial.events.map((ev) => (
+                  <div key={ev.id} className="p-4 rounded-2xl bg-[#FAF7F2] border border-[#EAE3D9] text-xs space-y-2">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <span className="font-bold text-[#24201D] text-sm">{ev.title}</span>
+                        <p className="text-[#5C534B] mt-0.5">
+                          {ev.date} a las {ev.time} — <strong>{ev.locationName}</strong>
+                        </p>
+                        {ev.virtualLink && (
+                          <p className="text-[#7A4E38] mt-0.5 truncate">🔗 {ev.virtualLink}</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => copyEventInvite(ev)}
+                          title="Copiar invitación"
+                          className="p-1.5 text-stone-400 hover:text-[#24201D] rounded-lg"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => startEditEvent(ev)}
+                          title="Editar"
+                          className="p-1.5 text-stone-400 hover:text-[#24201D] rounded-lg"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (window.confirm("¿Eliminar esta ceremonia?")) deleteEvent(formData.id, ev.id);
+                          }}
+                          title="Eliminar"
+                          className="p-1.5 text-stone-400 hover:text-red-600 rounded-lg"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-xs text-[#8C827A]">Aún no has agregado ninguna ceremonia.</p>
+              )}
             </div>
           </div>
         )}
@@ -1579,7 +1707,7 @@ export const MemorialEdit: React.FC = () => {
                     icon: Globe,
                   },
                   {
-                    id: "protected",
+                    id: "password",
                     title: "Protegido por Clave",
                     desc: "Requiere contraseña para ver fotos y homenajes.",
                     icon: KeyRound,
@@ -1615,7 +1743,7 @@ export const MemorialEdit: React.FC = () => {
                 })}
               </div>
 
-              {formData.privacy === "protected" && (
+              {formData.privacy === "password" && (
                 <div className="p-4 rounded-2xl bg-[#FAF7F2] border border-[#D8CEBE] space-y-2">
                   <label className="block font-semibold text-[#24201D] uppercase tracking-wider">
                     Contraseña de Acceso

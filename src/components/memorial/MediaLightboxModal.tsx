@@ -1,6 +1,6 @@
-import React from "react";
+import React, { useState } from "react";
 import { MediaItem } from "../../types";
-import { X, Calendar, User, Heart, Tag } from "lucide-react";
+import { X, Calendar, User, Heart, Tag, Download, Loader2 } from "lucide-react";
 
 interface MediaLightboxModalProps {
   item: MediaItem | null;
@@ -9,7 +9,33 @@ interface MediaLightboxModalProps {
 }
 
 export const MediaLightboxModal: React.FC<MediaLightboxModalProps> = ({ item, isOpen, onClose }) => {
+  const [isDownloading, setIsDownloading] = useState(false);
+
   if (!isOpen || !item) return null;
+
+  const handleDownload = async () => {
+    setIsDownloading(true);
+    try {
+      // A plain <a download> is ignored by browsers for cross-origin URLs
+      // (Supabase Storage lives on a different domain) — fetching the bytes
+      // ourselves and downloading from a blob: URL works regardless of origin.
+      const res = await fetch(item.url);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const ext = blob.type.split("/")[1] || "jpg";
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      link.download = `${(item.title || "memora-recuerdo").replace(/[^a-z0-9]+/gi, "-")}.${ext}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(blobUrl);
+    } catch {
+      window.open(item.url, "_blank");
+    } finally {
+      setIsDownloading(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in duration-200">
@@ -65,22 +91,36 @@ export const MediaLightboxModal: React.FC<MediaLightboxModalProps> = ({ item, is
             )}
 
             <div className="space-y-2 text-xs text-[#8C827A] pt-4 border-t border-white/10">
-              {item.dateTaken && (
+              {item.date && (
                 <div className="flex items-center gap-2">
                   <Calendar className="w-3.5 h-3.5 text-[#C5A880]" />
-                  <span>{item.dateTaken}</span>
+                  <span>{item.date}</span>
                 </div>
               )}
-              {item.uploadedBy && (
+              {item.uploaderName && (
                 <div className="flex items-center gap-2">
                   <User className="w-3.5 h-3.5 text-[#C5A880]" />
-                  <span>Aportado por: {item.uploadedBy}</span>
+                  <span>Aportado por: {item.uploaderName}</span>
                 </div>
               )}
             </div>
           </div>
 
-          <div className="pt-4 border-t border-white/10 text-center">
+          <div className="pt-4 border-t border-white/10 space-y-2">
+            {item.type !== "video" && (
+              <button
+                onClick={handleDownload}
+                disabled={isDownloading}
+                className="w-full py-2.5 rounded-full bg-[#C5A880] hover:bg-[#D4BC97] text-xs font-semibold text-[#1F1B18] transition-colors flex items-center justify-center gap-2 disabled:opacity-60"
+              >
+                {isDownloading ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Download className="w-3.5 h-3.5" />
+                )}
+                <span>{isDownloading ? "Descargando..." : "Descargar foto"}</span>
+              </button>
+            )}
             <button
               onClick={onClose}
               className="w-full py-2.5 rounded-full bg-white/10 hover:bg-white/20 text-xs font-medium text-white transition-colors"

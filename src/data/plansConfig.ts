@@ -110,7 +110,6 @@ export const CENTRALIZED_PLANS: Record<"esencial" | "familia" | "legado", PlanLi
       "PDF en alta resolución",
       "Herramientas de IA",
       "Soporte por WhatsApp",
-      "Funciones familiares avanzadas",
     ],
     comparativeRows: {
       priceLabel: "$4.900",
@@ -155,7 +154,6 @@ export const CENTRALIZED_PLANS: Record<"esencial" | "familia" | "legado", PlanLi
       "PDF en alta resolución",
       "Herramientas de IA",
       "Soporte por WhatsApp",
-      "Funciones premium prioritarias",
     ],
     comparativeRows: {
       priceLabel: "$14.900",
