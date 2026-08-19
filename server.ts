@@ -938,7 +938,7 @@ Genera 3 opciones de mensajes diferentes en formato JSON:
       res.json({ success: true, orderId: orderData.id });
     } catch (err: any) {
       console.error("Error in /api/payments/paypal/create-order:", err?.message || err);
-      res.status(500).json({ success: false, error: "Error interno del servidor de pagos." });
+      res.status(500).json({ success: false, error: "Error interno del servidor de pagos.", detail: err?.message });
     }
   });
 
