@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Logo } from "./Logo";
 import { useApp } from "../context/AppContext";
 import {
@@ -30,6 +30,18 @@ export const Navbar: React.FC = () => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!userDropdownOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setUserDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [userDropdownOpen]);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -118,7 +130,7 @@ export const Navbar: React.FC = () => {
         {/* Desktop Actions */}
         <div className="hidden md:flex items-center space-x-4">
           {isAuthenticated && currentUser ? (
-            <div className="relative">
+            <div className="relative" ref={userMenuRef}>
               <button
                 onClick={() => setUserDropdownOpen(!userDropdownOpen)}
                 className="flex items-center gap-2.5 px-3 py-2 rounded-full border border-[#D8CEBE] hover:border-[#C5A880] bg-white/70 hover:bg-white text-xs font-medium text-[#24201D] transition-all"
