@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useApp } from "../../context/AppContext";
 import { DEFAULT_PLANS } from "../../data/sampleData";
 import { PlanTier } from "../../types";
@@ -13,6 +13,7 @@ import {
   Building2,
   Smartphone,
   Wallet,
+  Globe2,
 } from "lucide-react";
 import confetti from "canvas-confetti";
 import { WhatsAppButton } from "../whatsapp/WhatsAppButton";
@@ -26,9 +27,17 @@ interface CheckoutModalProps {
 export const CheckoutModal: React.FC<CheckoutModalProps> = ({ planId, memorialId, onClose }) => {
   const { completePaymentSimulation, notify, currentUser } = useApp();
 
+  const [paymentGateway, setPaymentGateway] = useState<"flow" | "paypal">("flow");
+
   // Flow State
   const [isFlowLoading, setIsFlowLoading] = useState(false);
   const [isDone, setIsDone] = useState(false);
+
+  // PayPal State
+  const [paypalClientId, setPaypalClientId] = useState<string | null>(null);
+  const [paypalPriceUSD, setPaypalPriceUSD] = useState<string | null>(null);
+  const paypalButtonMounted = useRef(false);
+  const paypalContainerRef = useRef<HTMLDivElement>(null);
 
   const plan = DEFAULT_PLANS.find((p) => p.id === planId) || DEFAULT_PLANS[1];
 
@@ -86,6 +95,90 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ planId, memorialId
     }
   };
 
+  // Fetch PayPal config (client id + USD prices) once the PayPal tab is opened.
+  useEffect(() => {
+    if (paymentGateway !== "paypal" || paypalClientId) return;
+    fetch("/api/payments/paypal/config")
+      .then((r) => r.json())
+      .then((cfg) => {
+        if (cfg.configured) {
+          setPaypalClientId(cfg.clientId);
+          setPaypalPriceUSD(cfg.prices?.[planId] || null);
+        } else {
+          notify("warning", "PayPal no disponible", "Este método de pago aún no está configurado.");
+        }
+      })
+      .catch(() => notify("error", "No se pudo cargar PayPal", "Intenta nuevamente."));
+  }, [paymentGateway, paypalClientId, planId]);
+
+  // Load the PayPal JS SDK and render its Buttons once we have a client id.
+  useEffect(() => {
+    if (!paypalClientId || paypalButtonMounted.current || !paypalContainerRef.current) return;
+
+    const mount = () => {
+      const paypalSdk = (window as any).paypal;
+      if (!paypalSdk || paypalButtonMounted.current || !paypalContainerRef.current) return;
+      paypalSdk
+        .Buttons({
+          style: { layout: "vertical", color: "black", shape: "pill", label: "paypal" },
+          createOrder: async () => {
+            const res = await fetch("/api/payments/paypal/create-order", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                planId,
+                memorialId: memorialId || "",
+                userEmail: currentUser?.email || "",
+                userName: currentUser?.name || "Cliente",
+              }),
+            });
+            const data = await res.json();
+            if (!data.success) {
+              notify("error", "No se pudo iniciar el pago con PayPal", data.error || "Intenta nuevamente.");
+              throw new Error(data.error || "create-order failed");
+            }
+            return data.orderId;
+          },
+          onApprove: async (data: any) => {
+            const res = await fetch("/api/payments/paypal/capture-order", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ orderId: data.orderID }),
+            });
+            const result = await res.json();
+            if (result.success) {
+              setIsDone(true);
+              confetti({ particleCount: 80, spread: 60, origin: { y: 0.6 }, colors: ["#C5A880", "#7A4E38", "#24201D"] });
+            } else {
+              notify("error", "No se pudo completar el pago", result.error || "Contáctanos por WhatsApp.");
+            }
+          },
+          onError: (err: any) => {
+            console.error("PayPal error:", err);
+            notify("error", "Error con PayPal", "Intenta nuevamente o contáctanos por WhatsApp.");
+          },
+        })
+        .render(paypalContainerRef.current);
+      paypalButtonMounted.current = true;
+    };
+
+    if ((window as any).paypal) {
+      mount();
+      return;
+    }
+    const scriptId = "paypal-sdk-script";
+    let script = document.getElementById(scriptId) as HTMLScriptElement | null;
+    if (!script) {
+      script = document.createElement("script");
+      script.id = scriptId;
+      script.src = `https://www.paypal.com/sdk/js?client-id=${paypalClientId}&currency=USD`;
+      script.addEventListener("load", mount);
+      document.body.appendChild(script);
+    } else {
+      script.addEventListener("load", mount);
+    }
+  }, [paypalClientId, planId, memorialId, currentUser, notify]);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
       <div className="relative w-full max-w-lg bg-white rounded-3xl p-6 sm:p-8 border border-[#EAE3D9] shadow-2xl overflow-hidden max-h-[92vh] overflow-y-auto">
@@ -139,7 +232,30 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ planId, memorialId
               ))}
             </div>
 
+            {/* Gateway Selection Tabs */}
+            <div className="grid grid-cols-2 p-1 bg-[#FAF7F2] rounded-2xl border border-[#EAE3D9] text-xs font-medium">
+              <button
+                type="button"
+                onClick={() => setPaymentGateway("flow")}
+                className={`py-2.5 px-3 rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                  paymentGateway === "flow" ? "bg-white text-[#24201D] shadow-xs font-semibold" : "text-[#8C827A] hover:text-[#24201D]"
+                }`}
+              >
+                <span>🇨🇱 Flow (Chile)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setPaymentGateway("paypal")}
+                className={`py-2.5 px-3 rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                  paymentGateway === "paypal" ? "bg-white text-[#24201D] shadow-xs font-semibold" : "text-[#8C827A] hover:text-[#24201D]"
+                }`}
+              >
+                <span>🌎 PayPal (Internacional)</span>
+              </button>
+            </div>
+
             {/* FLOW PAYMENT (Webpay / Redcompra / MACH / Servipag — Chile) */}
+            {paymentGateway === "flow" && (
             <div className="space-y-4 animate-in fade-in duration-200">
                 <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200/80 space-y-3">
                   <div className="flex items-center justify-between">
@@ -195,6 +311,40 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ planId, memorialId
                   )}
                 </button>
               </div>
+            )}
+
+            {/* PAYPAL PAYMENT (International) */}
+            {paymentGateway === "paypal" && (
+              <div className="space-y-4 animate-in fade-in duration-200">
+                <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200/80 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-[#24201D]">Pago internacional con PayPal:</span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-[#003087] text-white">API Oficial</span>
+                  </div>
+                  <div className="flex items-center gap-2 p-2 rounded-xl bg-white border border-[#EAE3D9] text-[11px] text-[#5C534B]">
+                    <Globe2 className="w-4 h-4 text-sky-700 flex-shrink-0" />
+                    <span>Visa, Mastercard, American Express y saldo PayPal, en cualquier país.</span>
+                  </div>
+                  {paypalPriceUSD && (
+                    <p className="text-sm font-semibold text-[#24201D]">
+                      Total: US${paypalPriceUSD} <span className="text-[11px] font-normal text-[#8C827A]">/ año</span>
+                    </p>
+                  )}
+                  <p className="text-[11px] text-[#8C827A] leading-relaxed">
+                    El precio en dólares es distinto al de Chile para cubrir la conversión de moneda y las comisiones de PayPal. Tu memorial y placa QR quedan activos apenas se aprueba el pago.
+                  </p>
+                </div>
+
+                {!paypalClientId ? (
+                  <div className="flex items-center justify-center py-6 text-xs text-[#8C827A] gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Cargando PayPal...</span>
+                  </div>
+                ) : (
+                  <div ref={paypalContainerRef} />
+                )}
+              </div>
+            )}
 
             {/* Discrete WhatsApp Help for Payments */}
             <div className="pt-4 border-t border-[#EAE3D9] flex items-center justify-between text-xs">

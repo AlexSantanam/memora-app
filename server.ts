@@ -42,12 +42,13 @@ interface ReceiptEmailParams {
   userName?: string;
   planName?: string;
   amountCLP?: number;
+  currency?: "CLP" | "USD";
   invoiceNumber?: string;
   paymentMethod?: string;
 }
 
 async function sendReceiptEmail(params: ReceiptEmailParams): Promise<{ success: boolean; id?: string; error?: string }> {
-  const { userEmail, userName, planName, amountCLP, invoiceNumber, paymentMethod } = params;
+  const { userEmail, userName, planName, amountCLP, currency = "CLP", invoiceNumber, paymentMethod } = params;
 
   if (!userEmail) return { success: false, error: "userEmail es requerido." };
   if (!resend) {
@@ -55,7 +56,10 @@ async function sendReceiptEmail(params: ReceiptEmailParams): Promise<{ success: 
     return { success: false, error: "Servicio de correo no configurado." };
   }
 
-  const formattedAmount = `$${Number(amountCLP || 0).toLocaleString("es-CL")} CLP`;
+  const formattedAmount =
+    currency === "USD"
+      ? `US$${Number(amountCLP || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      : `$${Number(amountCLP || 0).toLocaleString("es-CL")} CLP`;
   const paidAt = new Date().toLocaleDateString("es-CL", { day: "numeric", month: "long", year: "numeric" });
 
   const html = `
@@ -135,6 +139,39 @@ if (!FLOW_API_KEY || !FLOW_SECRET_KEY) {
   console.warn("⚠️  FLOW_API_KEY / FLOW_SECRET_KEY not set in .env — payment routes will fail.");
 }
 
+// PayPal (international payments, outside Chile) — https://developer.paypal.com
+const PAYPAL_CLIENT_ID = process.env.PAYPAL_CLIENT_ID || "";
+const PAYPAL_CLIENT_SECRET = process.env.PAYPAL_CLIENT_SECRET || "";
+const PAYPAL_ENV = process.env.PAYPAL_ENVIRONMENT || "sandbox";
+const PAYPAL_BASE_URL = PAYPAL_ENV === "production" ? "https://api-m.paypal.com" : "https://api-m.sandbox.paypal.com";
+
+if (!PAYPAL_CLIENT_ID || !PAYPAL_CLIENT_SECRET) {
+  console.warn("⚠️  PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET not set in .env — PayPal routes will fail.");
+}
+
+// USD pricing — deliberately higher than the raw CLP->USD conversion: covers
+// PayPal's per-transaction fee (which would otherwise eat most of a ~$1 charge)
+// and avoids a price so low it reads as untrustworthy to a US/EU buyer.
+const PAYPAL_PLAN_PRICES_USD: Record<string, string> = {
+  esencial: "3.99",
+  familia: "9.99",
+  legado: "24.99",
+  para_siempre: "9.99",
+  acompanado: "24.99",
+};
+
+async function getPayPalAccessToken(): Promise<string> {
+  const auth = Buffer.from(`${PAYPAL_CLIENT_ID}:${PAYPAL_CLIENT_SECRET}`).toString("base64");
+  const res = await fetch(`${PAYPAL_BASE_URL}/v1/oauth2/token`, {
+    method: "POST",
+    headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/x-www-form-urlencoded" },
+    body: "grant_type=client_credentials",
+  });
+  if (!res.ok) throw new Error(`PayPal OAuth failed: ${res.status}`);
+  const data = await res.json();
+  return data.access_token;
+}
+
 function signFlowParams(params: Record<string, string | number>, secretKey: string): string {
   const sortedKeys = Object.keys(params).sort();
   let toSign = "";
@@ -176,6 +213,8 @@ async function startServer() {
       geminiConfigured: !!process.env.GEMINI_API_KEY,
       flowConfigured: !!FLOW_API_KEY && !!FLOW_SECRET_KEY,
       flowEnvironment: FLOW_ENV,
+      paypalConfigured: !!PAYPAL_CLIENT_ID && !!PAYPAL_CLIENT_SECRET,
+      paypalEnvironment: PAYPAL_ENV,
       supabaseConfigured: !!supabaseAdmin,
       supabaseReachable,
     });
@@ -777,6 +816,168 @@ Genera 3 opciones de mensajes diferentes en formato JSON:
       res.json({ success: true, data: statusData });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // ==========================================
+  // PAYPAL PAYMENT GATEWAY (International)
+  // ==========================================
+
+  app.get("/api/payments/paypal/config", (_req, res) => {
+    res.json({
+      configured: !!PAYPAL_CLIENT_ID && !!PAYPAL_CLIENT_SECRET,
+      clientId: PAYPAL_CLIENT_ID, // meant to be public, same as any PayPal JS SDK integration
+      environment: PAYPAL_ENV,
+      currency: "USD",
+      prices: PAYPAL_PLAN_PRICES_USD,
+    });
+  });
+
+  // Creates a PayPal order AND a matching "pending" row in payment_transactions
+  // (keyed by a short reference id passed to PayPal as invoice_id). Capture
+  // looks that row up instead of round-tripping plan/user/memorial data through
+  // PayPal's own fields, which have tight length limits.
+  app.post("/api/payments/paypal/create-order", async (req, res) => {
+    try {
+      const { planId, memorialId, userEmail, userName } = req.body;
+      const normalizedPlan = planId === "para_siempre" ? "familia" : planId === "acompanado" ? "legado" : (planId || "esencial");
+      const amount = PAYPAL_PLAN_PRICES_USD[normalizedPlan];
+      if (!amount) {
+        return res.status(400).json({ success: false, error: `Plan desconocido: ${planId}` });
+      }
+      if (!supabaseAdmin) {
+        return res.status(500).json({ success: false, error: "Base de datos no configurada." });
+      }
+
+      const referenceId = `PP-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`;
+
+      let userId: string | null = null;
+      if (userEmail) {
+        const { data: profile } = await supabaseAdmin.from("profiles").select("id").eq("email", userEmail).maybeSingle();
+        userId = profile?.id || null;
+      }
+
+      const { error: insertErr } = await supabaseAdmin.from("payment_transactions").insert({
+        user_id: userId,
+        memorial_id: memorialId || null,
+        plan_id: normalizedPlan,
+        amount: Math.round(parseFloat(amount) * 100), // USD stored in cents (CLP rows store whole pesos — see currency column)
+        currency: "USD",
+        status: "pending",
+        provider: "paypal",
+        invoice_number: referenceId,
+      });
+      if (insertErr) throw insertErr;
+
+      const accessToken = await getPayPalAccessToken();
+      const orderRes = await fetch(`${PAYPAL_BASE_URL}/v2/checkout/orders`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          intent: "CAPTURE",
+          purchase_units: [
+            {
+              invoice_id: referenceId,
+              amount: { currency_code: "USD", value: amount },
+              description: `MEMORA ${normalizedPlan} (${userName || "Cliente"})`,
+            },
+          ],
+        }),
+      });
+      const orderData = await orderRes.json();
+      if (!orderRes.ok || !orderData.id) {
+        console.error("[PayPal] create-order failed:", orderData);
+        return res.status(500).json({ success: false, error: "No se pudo crear la orden en PayPal." });
+      }
+
+      res.json({ success: true, orderId: orderData.id });
+    } catch (err: any) {
+      console.error("Error in /api/payments/paypal/create-order:", err);
+      res.status(500).json({ success: false, error: "Error interno del servidor de pagos." });
+    }
+  });
+
+  // Captures the payment server-side and verifies PayPal's own response before
+  // granting anything — the single authoritative writer, same role the Flow
+  // webhook plays. Idempotent via the pending->completed status transition:
+  // a retry (e.g. a double-click) that finds the row already "completed"
+  // updates zero rows and is treated as a no-op duplicate, not a re-grant.
+  app.post("/api/payments/paypal/capture-order", async (req, res) => {
+    try {
+      const { orderId } = req.body;
+      if (!orderId) return res.status(400).json({ success: false, error: "orderId requerido." });
+      if (!supabaseAdmin) return res.status(500).json({ success: false, error: "Base de datos no configurada." });
+
+      const accessToken = await getPayPalAccessToken();
+      const captureRes = await fetch(`${PAYPAL_BASE_URL}/v2/checkout/orders/${orderId}/capture`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+      });
+      const captureData = await captureRes.json();
+
+      const purchaseUnit = captureData?.purchase_units?.[0];
+      const capture = purchaseUnit?.payments?.captures?.[0];
+      const isCompleted = captureRes.ok && capture?.status === "COMPLETED";
+      const referenceId = purchaseUnit?.invoice_id || captureData?.purchase_units?.[0]?.reference_id;
+
+      if (!isCompleted || !referenceId) {
+        console.error("[PayPal] capture failed or incomplete:", JSON.stringify(captureData));
+        return res.status(402).json({ success: false, error: "El pago no pudo ser capturado." });
+      }
+
+      const { data: transitioned, error: updateErr } = await supabaseAdmin
+        .from("payment_transactions")
+        .update({ status: "completed" })
+        .eq("invoice_number", referenceId)
+        .eq("status", "pending")
+        .select("*")
+        .maybeSingle();
+      if (updateErr) throw updateErr;
+
+      if (transitioned) {
+        if (transitioned.user_id) {
+          await supabaseAdmin
+            .from("account_entitlements")
+            .update({
+              current_plan: transitioned.plan_id,
+              subscription_status: "active",
+              subscription_start_date: new Date().toISOString(),
+              next_renewal_date: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+              // account_entitlements.price_clp is display-only and always in CLP;
+              // approximate the USD amount so the profile's renewal reminder
+              // doesn't show a raw USD-cents number formatted as pesos.
+              price_clp: Math.round((transitioned.amount / 100) * 950),
+            })
+            .eq("user_id", transitioned.user_id);
+
+          if (transitioned.memorial_id) {
+            await supabaseAdmin
+              .from("memorials")
+              .update({ plan_id: transitioned.plan_id })
+              .eq("id", transitioned.memorial_id)
+              .eq("owner_id", transitioned.user_id);
+          }
+        }
+
+        const payerEmail = captureData?.payer?.email_address;
+        const payerName = [captureData?.payer?.name?.given_name, captureData?.payer?.name?.surname].filter(Boolean).join(" ");
+        sendReceiptEmail({
+          userEmail: payerEmail || "",
+          userName: payerName || undefined,
+          planName: `MEMORA ${transitioned.plan_id}`,
+          amountCLP: transitioned.amount / 100, // this row's amount is stored in USD cents
+          currency: "USD",
+          invoiceNumber: referenceId,
+          paymentMethod: "PayPal",
+        }).catch((e) => console.error("[Receipt Email] Failed from PayPal capture:", e));
+      } else {
+        console.log(`[PayPal] Duplicate capture call for ${referenceId} — already processed, skipping.`);
+      }
+
+      res.json({ success: true, planId: transitioned?.plan_id });
+    } catch (err: any) {
+      console.error("Error in /api/payments/paypal/capture-order:", err);
+      res.status(500).json({ success: false, error: "Error al procesar la captura del pago." });
     }
   });
 
