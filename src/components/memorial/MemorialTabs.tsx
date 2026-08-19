@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { Memorial, Tribute, MediaItem, TimelineEvent, FamilyMember, MemorialEvent } from "../../types";
 import { useApp } from "../../context/AppContext";
 import {
@@ -33,6 +33,14 @@ export const MemorialTabs: React.FC<MemorialTabsProps> = ({
   const { addTributeReaction, rsvpToEvent, openMemorialEdit, currentUser, notify } = useApp();
   const [activeTab, setActiveTab] = useState<"story" | "gallery" | "timeline" | "tributes" | "family" | "events">("story");
   const [selectedAlbumFilter, setSelectedAlbumFilter] = useState<string | "all">("all");
+  const activeTabRef = useRef<HTMLButtonElement>(null);
+
+  // La barra de pestañas se desborda horizontalmente en celulares (6 pestañas)
+  // — sin esto, la pestaña activa puede quedar fuera del área visible y nada
+  // indica que hay más opciones hacia la derecha.
+  useEffect(() => {
+    activeTabRef.current?.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" });
+  }, [activeTab]);
   const [confirmedEventIds, setConfirmedEventIds] = useState<Set<string>>(() => {
     try {
       const raw = localStorage.getItem(`memora_rsvp_${memorial.id}`);
@@ -107,34 +115,40 @@ export const MemorialTabs: React.FC<MemorialTabsProps> = ({
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
       {/* Tab Navigation Pill Bar */}
-      <div className="flex items-center justify-start sm:justify-center overflow-x-auto pb-4 mb-10 border-b border-[#EAE3D9] scrollbar-none gap-2">
-        {tabItems.map((tab) => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
-              className={`px-4 sm:px-5 py-2.5 rounded-full text-xs sm:text-sm font-medium transition-all flex items-center gap-2 flex-shrink-0 cursor-pointer ${
-                isActive
-                  ? "bg-[#24201D] text-white shadow-sm"
-                  : "bg-white text-[#5C534B] hover:bg-[#F4EFEA] border border-[#EAE3D9]"
-              }`}
-            >
-              <Icon className={`w-4 h-4 ${isActive ? "text-[#C5A880]" : "text-[#8C827A]"}`} />
-              <span>{tab.label}</span>
-              {tab.count !== null && tab.count > 0 && (
-                <span
-                  className={`text-[10px] px-2 py-0.5 rounded-full ${
-                    isActive ? "bg-white/20 text-white" : "bg-[#FAF7F2] text-[#7A4E38]"
-                  }`}
-                >
-                  {tab.count}
-                </span>
-              )}
-            </button>
-          );
-        })}
+      <div className="relative mb-10">
+        <div className="flex items-center justify-start sm:justify-center overflow-x-auto pb-4 border-b border-[#EAE3D9] scrollbar-none gap-2">
+          {tabItems.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                ref={isActive ? activeTabRef : undefined}
+                onClick={() => setActiveTab(tab.id as any)}
+                className={`px-4 sm:px-5 py-2.5 rounded-full text-xs sm:text-sm font-medium transition-all flex items-center gap-2 flex-shrink-0 cursor-pointer ${
+                  isActive
+                    ? "bg-[#24201D] text-white shadow-sm"
+                    : "bg-white text-[#5C534B] hover:bg-[#F4EFEA] border border-[#EAE3D9]"
+                }`}
+              >
+                <Icon className={`w-4 h-4 ${isActive ? "text-[#C5A880]" : "text-[#8C827A]"}`} />
+                <span>{tab.label}</span>
+                {tab.count !== null && tab.count > 0 && (
+                  <span
+                    className={`text-[10px] px-2 py-0.5 rounded-full ${
+                      isActive ? "bg-white/20 text-white" : "bg-[#FAF7F2] text-[#7A4E38]"
+                    }`}
+                  >
+                    {tab.count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+        {/* Fade hints on mobile so it's clear the pill bar keeps scrolling */}
+        <div className="sm:hidden pointer-events-none absolute top-0 bottom-4 left-0 w-8 bg-gradient-to-r from-[#FAF7F2] to-transparent" />
+        <div className="sm:hidden pointer-events-none absolute top-0 bottom-4 right-0 w-8 bg-gradient-to-l from-[#FAF7F2] to-transparent" />
       </div>
 
       {/* TAB CONTENT: Historia de Vida / Recuerdos */}
