@@ -96,16 +96,16 @@ export const MemorialTabs: React.FC<MemorialTabsProps> = ({
   const tabItems = [
     {
       id: "story",
-      label: memorial.type === "pet" ? "Historia & Recuerdos" : "Historia de Vida",
+      label: "Historia",
       icon: BookOpen,
       count: null,
     },
-    { id: "gallery", label: "Galería & Recuerdos", icon: ImageIcon, count: memorial.media?.length || 0 },
+    { id: "gallery", label: "Galería", icon: ImageIcon, count: memorial.media?.length || 0 },
     { id: "timeline", label: "Línea de Tiempo", icon: Clock, count: memorial.timeline?.length || 0 },
-    { id: "tributes", label: "Homenajes & Velas", icon: Heart, count: approvedTributes.length },
+    { id: "tributes", label: "Homenajes", icon: Heart, count: approvedTributes.length },
     {
       id: "family",
-      label: memorial.type === "pet" ? "Sus Humanos & Familia" : "Familia & Vínculos",
+      label: "Familia",
       icon: Users2,
       count: memorial.family?.length || 0,
     },
@@ -116,7 +116,7 @@ export const MemorialTabs: React.FC<MemorialTabsProps> = ({
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
       {/* Tab Navigation Pill Bar */}
       <div className="relative mb-10">
-        <div className="flex items-center justify-start sm:justify-center overflow-x-auto pb-4 border-b border-[#EAE3D9] scrollbar-none gap-2">
+        <div className="flex items-center justify-start sm:justify-center overflow-x-auto pb-4 border-b border-[#EAE3D9] scrollbar-none gap-1.5 sm:gap-2">
           {tabItems.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -125,17 +125,17 @@ export const MemorialTabs: React.FC<MemorialTabsProps> = ({
                 key={tab.id}
                 ref={isActive ? activeTabRef : undefined}
                 onClick={() => setActiveTab(tab.id as any)}
-                className={`px-4 sm:px-5 py-2.5 rounded-full text-xs sm:text-sm font-medium transition-all flex items-center gap-2 flex-shrink-0 cursor-pointer ${
+                className={`px-3 sm:px-5 py-2 sm:py-2.5 rounded-full text-[11px] sm:text-sm font-medium transition-all flex items-center gap-1.5 sm:gap-2 flex-shrink-0 cursor-pointer ${
                   isActive
                     ? "bg-[#24201D] text-white shadow-sm"
                     : "bg-white text-[#5C534B] hover:bg-[#F4EFEA] border border-[#EAE3D9]"
                 }`}
               >
-                <Icon className={`w-4 h-4 ${isActive ? "text-[#C5A880]" : "text-[#8C827A]"}`} />
+                <Icon className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${isActive ? "text-[#C5A880]" : "text-[#8C827A]"}`} />
                 <span>{tab.label}</span>
                 {tab.count !== null && tab.count > 0 && (
                   <span
-                    className={`text-[10px] px-2 py-0.5 rounded-full ${
+                    className={`text-[9px] sm:text-[10px] px-1.5 sm:px-2 py-0.2 sm:py-0.5 rounded-full ${
                       isActive ? "bg-white/20 text-white" : "bg-[#FAF7F2] text-[#7A4E38]"
                     }`}
                   >
