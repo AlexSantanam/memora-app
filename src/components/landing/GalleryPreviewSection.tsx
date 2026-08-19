@@ -4,7 +4,7 @@ import { useApp } from "../../context/AppContext";
 
 export const GalleryPreviewSection: React.FC = () => {
   const { openMemorialBySlug } = useApp();
-  const [activeFilter, setActiveFilter] = useState<"todas" | "albumes" | "recuerdos">("todas");
+  const [activeFilter, setActiveFilter] = useState<"todas" | "familia" | "jardines">("todas");
 
   const sampleGallery = [
     {
@@ -77,7 +77,7 @@ export const GalleryPreviewSection: React.FC = () => {
           <div className="flex items-center gap-2">
             <button
               onClick={() => setActiveFilter("todas")}
-              className={`px-4 py-2 rounded-full text-xs font-medium transition-all ${
+              className={`px-4 py-2 rounded-full text-xs font-medium transition-all cursor-pointer ${
                 activeFilter === "todas"
                   ? "bg-[#24201D] text-white shadow-xs"
                   : "bg-white text-[#5C534B] border border-[#D8CEBE] hover:border-[#C5A880]"
@@ -86,31 +86,37 @@ export const GalleryPreviewSection: React.FC = () => {
               Todas las fotos
             </button>
             <button
-              onClick={() => setActiveFilter("albumes")}
-              className={`px-4 py-2 rounded-full text-xs font-medium transition-all ${
-                activeFilter === "albumes"
+              onClick={() => setActiveFilter("familia")}
+              className={`px-4 py-2 rounded-full text-xs font-medium transition-all cursor-pointer ${
+                activeFilter === "familia"
                   ? "bg-[#24201D] text-white shadow-xs"
                   : "bg-white text-[#5C534B] border border-[#D8CEBE] hover:border-[#C5A880]"
               }`}
             >
-              Álbumes familiares
+              Momentos en Familia
             </button>
             <button
-              onClick={() => setActiveFilter("recuerdos")}
-              className={`px-4 py-2 rounded-full text-xs font-medium transition-all ${
-                activeFilter === "recuerdos"
+              onClick={() => setActiveFilter("jardines")}
+              className={`px-4 py-2 rounded-full text-xs font-medium transition-all cursor-pointer ${
+                activeFilter === "jardines"
                   ? "bg-[#24201D] text-white shadow-xs"
                   : "bg-white text-[#5C534B] border border-[#D8CEBE] hover:border-[#C5A880]"
               }`}
             >
-              Cartas y momentos
+              Jardines y Flores
             </button>
           </div>
         </div>
 
         {/* Gallery Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {sampleGallery.map((item) => (
+          {sampleGallery
+            .filter((item) => {
+              if (activeFilter === "todas") return true;
+              if (activeFilter === "familia") return item.album === "Momentos en Familia";
+              return item.album === "Jardines y Flores";
+            })
+            .map((item) => (
             <div
               key={item.id}
               onClick={() => openMemorialBySlug("maria-gonzalez-valparaiso")}
