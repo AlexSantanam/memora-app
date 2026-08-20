@@ -1231,26 +1231,52 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     memorialId: string,
     tributeData: Omit<Tribute, "id" | "createdAt" | "status">
   ) => {
-    const { data: row, error } = await supabase
-      .from("tributes")
-      .insert({
-        memorial_id: memorialId,
-        author_name: tributeData.authorName,
-        author_email: tributeData.authorEmail || null,
-        relationship: tributeData.relationship || null,
-        message: tributeData.message,
-        photo_url: tributeData.photoUrl || null,
-        heart_count: 1,
-      })
-      .select()
-      .single();
+    // No se encadena .select() al insert — un homenaje "pending" no es
+    // visible ni siquiera para quien lo escribió (así debe ser: nadie ve
+    // homenajes sin aprobar salvo el dueño), así que para un visitante
+    // anónimo NUNCA se podría leer de vuelta, sin importar el problema de
+    // INSERT+RETURNING ya conocido en memorials. El id se genera acá mismo
+    // y el status esperado se calcula igual que el trigger set_tribute_status
+    // del servidor (según enable_tribute_auto_approval del memorial, que el
+    // cliente ya tiene en memoria) — el valor real en la base de datos es
+    // siempre la autoridad; esto solo evita depender de leerlo de vuelta.
+    const newId = crypto.randomUUID();
+    const memorial = memorials.find((m) => m.id === memorialId);
+    const expectedStatus: Tribute["status"] = memorial?.enableTributeAutoApproval ? "approved" : "pending";
 
-    if (error || !row) {
-      notify("error", "No se pudo enviar el homenaje", error?.message || "Intenta nuevamente.");
+    const { error } = await supabase.from("tributes").insert({
+      id: newId,
+      memorial_id: memorialId,
+      author_name: tributeData.authorName,
+      author_email: tributeData.authorEmail || null,
+      relationship: tributeData.relationship || null,
+      message: tributeData.message,
+      photo_url: tributeData.photoUrl || null,
+      candle_lit: tributeData.candleLit || false,
+      flower_placed: tributeData.flowerPlaced || false,
+      heart_count: 1,
+    });
+
+    if (error) {
+      notify("error", "No se pudo enviar el homenaje", error.message || "Intenta nuevamente.");
       return;
     }
 
-    const newTribute = mapTributeRow(row, []);
+    const newTribute: Tribute = {
+      id: newId,
+      memorialId,
+      authorName: tributeData.authorName,
+      authorEmail: tributeData.authorEmail,
+      relationship: tributeData.relationship,
+      message: tributeData.message,
+      photoUrl: tributeData.photoUrl,
+      candleLit: tributeData.candleLit,
+      flowerPlaced: tributeData.flowerPlaced,
+      heartCount: 1,
+      status: expectedStatus,
+      createdAt: new Date().toISOString(),
+      replies: [],
+    };
     setMemorials((prev) =>
       prev.map((m) => (m.id === memorialId ? { ...m, tributes: [newTribute, ...m.tributes] } : m))
     );
