@@ -219,6 +219,54 @@ const ai = new GoogleGenAI({
   },
 });
 
+const GROQ_API_KEY = process.env.GROQ_API_KEY || "";
+
+// Tries Gemini first (so it starts working again automatically whenever
+// Google lifts the current account-level block, no code change needed),
+// then falls back to Groq (Llama 3.3 70B, free tier) if Gemini is
+// unavailable or fails. Returns null if both fail, so callers can fall
+// back to the local template.
+async function generateJsonWithAI(prompt: string): Promise<any | null> {
+  if (process.env.GEMINI_API_KEY) {
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: prompt,
+        config: { responseMimeType: "application/json" },
+      });
+      return JSON.parse(response.text || "{}");
+    } catch (err: any) {
+      console.warn("Gemini call failed, trying Groq:", err?.message || err);
+    }
+  }
+
+  if (GROQ_API_KEY) {
+    try {
+      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${GROQ_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "openai/gpt-oss-120b",
+          // Groq's strict json_object mode fails on this prompt's larger nested
+          // output (a long biography embedded in a JSON structure) — the prompt
+          // already asks for JSON explicitly, so parse loosely instead, stripping
+          // a markdown code fence if the model wraps its answer in one.
+          messages: [{ role: "user", content: prompt }],
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error?.message || `Groq HTTP ${res.status}`);
+      const raw = data.choices?.[0]?.message?.content || "{}";
+      const jsonText = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
+      return JSON.parse(jsonText);
+    } catch (err: any) {
+      console.warn("Groq call failed, using local fallback:", err?.message || err);
+    }
+  }
+
+  return null;
+}
+
 async function startServer() {
   const app = express();
   // Hosting platforms (Railway, Render, etc.) assign the port dynamically via
@@ -270,6 +318,7 @@ ${allUrls.map((url) => `  <url><loc>${url}</loc></url>`).join("\n")}
       appName: "MEMORA",
       timestamp: new Date().toISOString(),
       geminiConfigured: !!process.env.GEMINI_API_KEY,
+      groqConfigured: !!GROQ_API_KEY,
       flowConfigured: !!FLOW_API_KEY && !!FLOW_SECRET_KEY,
       flowEnvironment: FLOW_ENV,
       paypalConfigured: !!PAYPAL_CLIENT_ID && !!PAYPAL_CLIENT_SECRET,
@@ -376,22 +425,9 @@ Devuelve la respuesta en formato JSON con la siguiente estructura exacta:
   ]
 }`;
 
-      if (process.env.GEMINI_API_KEY) {
-        try {
-          const response = await ai.models.generateContent({
-            model: "gemini-3.5-flash",
-            contents: prompt,
-            config: {
-              responseMimeType: "application/json",
-            },
-          });
-
-          const responseText = response.text || "{}";
-          const parsed = JSON.parse(responseText);
-          return res.json({ success: true, data: parsed });
-        } catch (apiErr: any) {
-          console.warn("Gemini API call failed, generating contextual fallback:", apiErr?.message);
-        }
+      const aiResult = await generateJsonWithAI(prompt);
+      if (aiResult) {
+        return res.json({ success: true, data: aiResult });
       }
 
       if (isPet) {
@@ -495,20 +531,9 @@ Genera 3 opciones de mensajes diferentes en formato JSON:
   ]
 }`;
 
-      if (process.env.GEMINI_API_KEY) {
-        try {
-          const response = await ai.models.generateContent({
-            model: "gemini-3.5-flash",
-            contents: prompt,
-            config: {
-              responseMimeType: "application/json",
-            },
-          });
-          const parsed = JSON.parse(response.text || "{}");
-          return res.json({ success: true, data: parsed });
-        } catch (err) {
-          console.warn("Gemini tribute assist failed, using fallback:", err);
-        }
+      const aiResult = await generateJsonWithAI(prompt);
+      if (aiResult) {
+        return res.json({ success: true, data: aiResult });
       }
 
       return res.json({
