@@ -713,11 +713,19 @@ export const MemorialTabs: React.FC<MemorialTabsProps> = ({
                 const isCenterTier = tier === "pareja_hermano";
                 if (members.length === 0 && !isCenterTier) return null;
 
-                // Split pareja/hermano members evenly on each side so the
-                // memorial's protagonist always lands dead-center, regardless
-                // of how many of them there are (or whether the count is odd).
-                const leftMembers = isCenterTier ? members.slice(0, Math.ceil(members.length / 2)) : [];
-                const rightMembers = isCenterTier ? members.slice(Math.ceil(members.length / 2)) : members;
+                // Pareja sits right next to the protagonist; hermanos land
+                // further out to the sides — split each group evenly across
+                // both sides, always closest-to-farthest from the center.
+                let leftMembers: FamilyMember[] = [];
+                let rightMembers: FamilyMember[] = [];
+                if (isCenterTier) {
+                  const parejaLeft = familyByGeneration.pareja.slice(0, Math.ceil(familyByGeneration.pareja.length / 2));
+                  const parejaRight = familyByGeneration.pareja.slice(Math.ceil(familyByGeneration.pareja.length / 2));
+                  const hermanoLeft = familyByGeneration.hermano.slice(0, Math.ceil(familyByGeneration.hermano.length / 2));
+                  const hermanoRight = familyByGeneration.hermano.slice(Math.ceil(familyByGeneration.hermano.length / 2));
+                  leftMembers = [...hermanoLeft, ...parejaLeft]; // outer -> inner (justify-end packs toward the center)
+                  rightMembers = [...parejaRight, ...hermanoRight]; // inner -> outer (justify-start packs toward the center)
+                }
 
                 const renderMemberNode = (fam: FamilyMember) => {
                   const photoUrl = fam.photoUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80";
@@ -807,8 +815,8 @@ export const MemorialTabs: React.FC<MemorialTabsProps> = ({
           )}
 
           {familyByGeneration.amigo.length > 0 && (
-            <div className="pt-6 border-t border-[#EAE3D9] space-y-4">
-              <h3 className="font-serif text-lg text-[#24201D] font-medium text-center">Amigos Cercanos</h3>
+            <div className="mt-8 p-6 rounded-3xl bg-white border border-[#EAE3D9] space-y-4">
+              <h3 className="font-serif text-base text-[#7A4E38] font-medium text-center uppercase tracking-wide">Amigos Cercanos</h3>
               <div className="flex flex-wrap items-start justify-center gap-6">
                 {familyByGeneration.amigo.map((fam) => {
                   const photoUrl = fam.photoUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80";
