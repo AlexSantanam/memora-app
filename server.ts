@@ -1337,7 +1337,7 @@ Genera 3 opciones de mensajes diferentes en formato JSON:
       const { planTier, currentMemorasCount, totalPhotosCount, totalVideosCount, action, incomingCount } = req.body;
       
       const PLAN_LIMITS: Record<string, { maxMemoras: number; maxPhotos: number; maxVideos: number; name: string }> = {
-        esencial: { maxMemoras: 1, maxPhotos: 10, maxVideos: 1, name: "MEMORA Esencial" },
+        esencial: { maxMemoras: 1, maxPhotos: 10, maxVideos: 3, name: "MEMORA Esencial" },
         familia: { maxMemoras: 3, maxPhotos: 100, maxVideos: 10, name: "MEMORA Familia" },
         legado: { maxMemoras: 10, maxPhotos: 1000, maxVideos: 50, name: "MEMORA Legado" },
         para_siempre: { maxMemoras: 3, maxPhotos: 100, maxVideos: 10, name: "MEMORA Familia" },

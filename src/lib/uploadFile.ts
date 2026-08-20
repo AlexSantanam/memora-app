@@ -1,6 +1,7 @@
 import { supabase } from "./supabaseClient";
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10MB, matches the existing UI copy
+const MAX_VIDEO_FILE_BYTES = 50 * 1024 * 1024; // 50MB — 10MB is unusably short for real video
 
 function extensionOf(file: File): string {
   const fromName = file.name.split(".").pop();
@@ -14,6 +15,11 @@ function randomFileName(file: File): string {
 
 export function assertFileSizeOk(file: File): string | null {
   if (file.size > MAX_FILE_BYTES) return "El archivo debe ser menor a 10MB";
+  return null;
+}
+
+export function assertVideoFileSizeOk(file: File): string | null {
+  if (file.size > MAX_VIDEO_FILE_BYTES) return "El video debe ser menor a 50MB";
   return null;
 }
 

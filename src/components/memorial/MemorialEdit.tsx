@@ -1,7 +1,7 @@
 import React, { useState, useRef } from "react";
 import { useApp } from "../../context/AppContext";
 import { Memorial, PrivacyLevel, PlanTier, TimelineEvent, FamilyMember, MemorialEvent, Collaborator } from "../../types";
-import { uploadMemorialAsset } from "../../lib/uploadFile";
+import { uploadMemorialAsset, assertVideoFileSizeOk } from "../../lib/uploadFile";
 import { getYouTubeThumbnail } from "../../lib/youtube";
 import {
   Save,
@@ -96,6 +96,7 @@ export const MemorialEdit: React.FC = () => {
   const editMainPhotoRef = useRef<HTMLInputElement>(null);
   const editCoverPhotoRef = useRef<HTMLInputElement>(null);
   const editGalleryPhotoRef = useRef<HTMLInputElement>(null);
+  const editVideoFileRef = useRef<HTMLInputElement>(null);
 
   // AI Assistant in Story Tab
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
@@ -110,6 +111,7 @@ export const MemorialEdit: React.FC = () => {
 
   const [newVideoUrl, setNewVideoUrl] = useState("");
   const [newVideoTitle, setNewVideoTitle] = useState("");
+  const [isUploadingVideoFile, setIsUploadingVideoFile] = useState(false);
   const [newAlbumTitle, setNewAlbumTitle] = useState("");
 
   const [newTimelineYear, setNewTimelineYear] = useState("");
@@ -233,6 +235,34 @@ export const MemorialEdit: React.FC = () => {
     if (added !== false) {
       setNewVideoUrl("");
       setNewVideoTitle("");
+    }
+  };
+
+  const handleVideoFileUpload = async (file: File) => {
+    if (!currentMemorial) return;
+    const sizeError = assertVideoFileSizeOk(file);
+    if (sizeError) {
+      notify("warning", "Video muy pesado", sizeError);
+      return;
+    }
+    setIsUploadingVideoFile(true);
+    try {
+      const url = await uploadMemorialAsset(currentMemorial.id, "gallery", file);
+      const added = addMediaItem(formData.id, {
+        memorialId: formData.id,
+        type: "video",
+        url,
+        title: newVideoTitle || file.name.replace(/\.[^.]+$/, "") || "Video familiar",
+        uploaderName: formData.ownerName || "Administrador",
+      });
+      if (added !== false) {
+        setNewVideoTitle("");
+        notify("success", "Video subido", "Tu video quedó agregado al memorial.");
+      }
+    } catch (err: any) {
+      notify("error", "No se pudo subir el video", err?.message || "Intenta nuevamente.");
+    } finally {
+      setIsUploadingVideoFile(false);
     }
   };
 
@@ -1113,56 +1143,63 @@ export const MemorialEdit: React.FC = () => {
                     <Camera className="w-3.5 h-3.5 text-[#C5A880]" />
                     Videos del Recuerdo
                   </h4>
-                  {userUsage.videosMax === 0 ? (
-                    <div className="p-4 rounded-xl bg-white border border-[#EAE3D9] space-y-3">
-                      <p className="text-xs text-[#5C534B] leading-relaxed">
-                        Los videos están disponibles desde <strong>MEMORA Familia</strong>.
-                      </p>
-                      <p className="text-[11px] text-[#8C827A]">
-                        Podrás conservar clips con audio, momentos familiares grabados y testimonios en video.
-                      </p>
+                  <p className="text-xs text-[#5C534B]">
+                    Tienes <strong>{userUsage.videosRemaining}</strong> de {userUsage.videosMax} videos disponibles en tu plan.
+                  </p>
+
+                  {userUsage.plan.id !== "esencial" && (
+                    <div className="space-y-2 pb-2 border-b border-[#EAE3D9]">
+                      <input
+                        type="file"
+                        ref={editVideoFileRef}
+                        accept="video/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) handleVideoFileUpload(file);
+                          e.target.value = "";
+                        }}
+                      />
                       <button
                         type="button"
-                        onClick={() => {
-                          setSelectedPlanForCheckout("familia");
-                          setCurrentView("pricing");
-                        }}
-                        className="w-full py-2 rounded-full bg-[#7A4E38] text-white font-semibold hover:bg-[#623D2C] transition-colors cursor-pointer text-xs"
+                        disabled={isUploadingVideoFile || userUsage.videosRemaining <= 0}
+                        onClick={() => editVideoFileRef.current?.click()}
+                        className="w-full py-2.5 rounded-full bg-[#24201D] text-white font-semibold hover:bg-[#3D3530] transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50"
                       >
-                        Ver planes
+                        <Upload className="w-3.5 h-3.5 text-[#C5A880]" />
+                        <span>{isUploadingVideoFile ? "Subiendo..." : "Subir video desde el dispositivo"}</span>
                       </button>
+                      <p className="text-[10px] text-[#8C827A]">Hasta 50MB. Este video sí ocupa tu almacenamiento de MEMORA.</p>
                     </div>
-                  ) : (
-                    <form onSubmit={handleAddNewVideo} className="space-y-2">
-                      <p className="text-xs text-[#5C534B]">
-                        Tienes <strong>{userUsage.videosRemaining}</strong> de {userUsage.videosMax} videos disponibles en tu plan.
-                      </p>
-                      <input
-                        type="text"
-                        required
-                        value={newVideoUrl}
-                        onChange={(e) => setNewVideoUrl(e.target.value)}
-                        placeholder="Enlace de YouTube del video"
-                        className="w-full px-3 py-2 rounded-xl bg-white border border-[#D8CEBE] text-xs text-[#24201D]"
-                      />
-                      <input
-                        type="text"
-                        value={newVideoTitle}
-                        onChange={(e) => setNewVideoTitle(e.target.value)}
-                        placeholder="Título del video (opcional)"
-                        className="w-full px-3 py-2 rounded-xl bg-white border border-[#D8CEBE] text-xs text-[#24201D]"
-                      />
-                      <p className="text-[10px] text-[#8C827A]">
-                        Sube el video a tu propia cuenta de YouTube (puede ser "No listado") y pega aquí el enlace — así el video queda bajo tu control, no ocupa espacio de tu plan de almacenamiento de fotos.
-                      </p>
-                      <button
-                        type="submit"
-                        className="w-full py-2.5 rounded-full bg-[#24201D] text-white font-semibold hover:bg-[#3D3530] transition-colors"
-                      >
-                        Agregar Video
-                      </button>
-                    </form>
                   )}
+
+                  <form onSubmit={handleAddNewVideo} className="space-y-2">
+                    <input
+                      type="text"
+                      required
+                      value={newVideoUrl}
+                      onChange={(e) => setNewVideoUrl(e.target.value)}
+                      placeholder="Enlace de YouTube del video"
+                      className="w-full px-3 py-2 rounded-xl bg-white border border-[#D8CEBE] text-xs text-[#24201D]"
+                    />
+                    <input
+                      type="text"
+                      value={newVideoTitle}
+                      onChange={(e) => setNewVideoTitle(e.target.value)}
+                      placeholder="Título del video (opcional)"
+                      className="w-full px-3 py-2 rounded-xl bg-white border border-[#D8CEBE] text-xs text-[#24201D]"
+                    />
+                    <p className="text-[10px] text-[#8C827A]">
+                      Sube el video a tu propia cuenta de YouTube (puede ser "No listado") y pega aquí el enlace — no ocupa tu almacenamiento de MEMORA.
+                    </p>
+                    <button
+                      type="submit"
+                      disabled={userUsage.videosRemaining <= 0}
+                      className="w-full py-2.5 rounded-full bg-white border border-[#D8CEBE] text-[#24201D] font-semibold hover:bg-[#F4EFEA] transition-colors disabled:opacity-50"
+                    >
+                      Agregar Video de YouTube
+                    </button>
+                  </form>
                 </div>
                 <div className="text-[11px] text-[#8C827A] pt-2 border-t border-[#EAE3D9]">
                   Límite global: {userUsage.videosMax} video(s) totales por plan.
