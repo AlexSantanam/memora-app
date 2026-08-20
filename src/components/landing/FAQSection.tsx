@@ -36,10 +36,6 @@ export const FAQSection: React.FC = () => {
       q: "¿Puedo descargar las fotos que subí?",
       a: "Sí. Cada fotografía se puede descargar individualmente en su tamaño original desde el visualizador ampliado, con un solo clic — igual que en cualquier galería.",
     },
-    {
-      q: "¿Qué incluye el servicio Concierge del Plan Acompañado?",
-      a: "Un especialista editorial de MEMORA te acompañará paso a paso: agendamos una llamada tranquila para escuchar la historia de tu ser querido, nos encargamos de seleccionar y organizar las fotos, redactamos la biografía con cuidado artesanal y te enviamos a domicilio una placa física resistente a la intemperie con el código QR grabado.",
-    },
   ];
 
   const toggle = (idx: number) => {

@@ -148,14 +148,6 @@ export const Footer: React.FC = () => {
                   onClick={() => setCurrentView("contact")}
                   className="hover:text-white transition-colors text-left"
                 >
-                  Servicio Concierge
-                </button>
-              </li>
-              <li>
-                <button
-                  onClick={() => setCurrentView("contact")}
-                  className="hover:text-white transition-colors text-left"
-                >
                   Ayuda editorial y biografías
                 </button>
               </li>

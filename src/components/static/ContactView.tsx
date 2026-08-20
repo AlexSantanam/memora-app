@@ -7,7 +7,7 @@ export const ContactView: React.FC = () => {
   const { setCurrentView, notify } = useApp();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [topic, setTopic] = useState("concierge");
+  const [topic, setTopic] = useState("editorial");
   const [message, setMessage] = useState("");
   const [submitted, setSubmitted] = useState(false);
 
@@ -120,9 +120,8 @@ export const ContactView: React.FC = () => {
                 onChange={(e) => setTopic(e.target.value)}
                 className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#D8CEBE] text-xs text-[#24201D]"
               >
-                <option value="concierge">Servicio Concierge (Creación asistida completa)</option>
                 <option value="editorial">Ayuda con la redacción de la biografía</option>
-                <option value="qr_plaques">Placas físicas de bronce / QR para lápidas</option>
+                {/* Placas físicas de bronce: oculto hasta que se venda de verdad. */}
                 <option value="billing">Consultas sobre planes y facturación</option>
                 <option value="general">Otra consulta o sugerencia</option>
               </select>
