@@ -1028,12 +1028,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     if (!currentUser) throw new Error("Debes iniciar sesión para crear una MEMORA.");
 
-    // El wizard puede quedar abierto varios minutos (fotos, biografía con IA,
-    // revisión) — tiempo suficiente para que el access token expire. getSession()
-    // lo renueva sola si aún hay un refresh token válido; si no hay sesión en
-    // absoluto, el insert de abajo llegaría como anónimo y Postgres lo rechazaría
-    // con un error de RLS que no le dice nada útil al usuario ("revisa los
-    // campos" cuando el problema real es la sesión) — se detecta acá antes.
+    // getSession() renueva sola el token si aún hay un refresh token válido
+    // (protege contra el caso de que el wizard quede abierto mucho rato) y,
+    // más importante: session.user.id es la identidad REAL que Postgres verá
+    // como auth.uid() para esta escritura — currentUser.id es solo estado de
+    // React en memoria, y puede quedar desincronizado del inicio de sesión
+    // real del navegador (p. ej. si se cambió de cuenta en otra pestaña).
+    // Insertar con currentUser.id en vez de session.user.id fue exactamente
+    // lo que producía "new row violates row-level security policy": el
+    // owner_id enviado no coincidía con auth.uid(), sin que tuviera nada que
+    // ver con cuánto tiempo llevaba la sesión abierta.
     const {
       data: { session },
     } = await supabase.auth.getSession();
@@ -1044,6 +1048,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         "Ha pasado demasiado tiempo desde que iniciaste sesión. Vuelve a iniciar sesión y tu información no se perderá."
       );
       throw new Error("Sesión expirada — inicia sesión nuevamente.");
+    }
+    if (session.user.id !== currentUser.id) {
+      // El resto del insert (owner_name/owner_email/plan_id) todavía usa
+      // currentUser — si el id no coincide con la sesión real, esos otros
+      // campos tampoco son de fiar. Mejor pedir recargar que crear un
+      // memorial con datos mezclados de dos cuentas distintas.
+      notify(
+        "error",
+        "Tu sesión cambió",
+        "Parece que iniciaste sesión con otra cuenta en otra pestaña. Recarga esta página e intenta nuevamente."
+      );
+      throw new Error("currentUser desincronizado con la sesión activa.");
     }
 
     const baseSlug = (data.personName || "recuerdo-eterno")
@@ -1077,7 +1093,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         biography: data.biography || "",
         privacy: data.privacy || "public",
         status: "published",
-        owner_id: currentUser.id,
+        owner_id: session.user.id,
         owner_name: currentUser.name,
         owner_email: currentUser.email,
         plan_id: currentUser.currentPlan,
