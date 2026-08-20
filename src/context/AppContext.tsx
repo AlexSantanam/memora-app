@@ -1071,13 +1071,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const uniqueSlug = `${baseSlug}-${Math.floor(100 + Math.random() * 900)}`;
 
-    const { data: row, error } = await supabase
+    // Se conoce el id ANTES de insertar (en vez de pedirlo de vuelta con
+    // .select() en el mismo insert) porque pedir la fila de vuelta en la
+    // misma operación choca con la política de SELECT sobre una fila que
+    // recién se está creando en esa misma transacción — confirmado en vivo:
+    // el mismo insert sin encadenar .select() funciona siempre; encadenado,
+    // falla con "new row violates row-level security policy" pese a que el
+    // dueño y la sesión son correctos. Se hace un fetch aparte después
+    // (fetchMemorialsByFilter, más abajo), como una request nueva y separada
+    // — ahí sí lee bien, porque la fila ya quedó confirmada de una operación
+    // anterior.
+    const newId = data.id || crypto.randomUUID();
+
+    const { error } = await supabase
       .from("memorials")
       .insert({
-        // Permite que el wizard genere el id ANTES de crear la fila, para
-        // poder subir fotos a Storage bajo esa ruta mientras el usuario aún
-        // está completando el formulario (ver MemorialWizard.tsx).
-        ...(data.id ? { id: data.id } : {}),
+        id: newId,
         slug: uniqueSlug,
         type: data.type || "person",
         person_name: data.personName || "Nombre y Apellidos",
@@ -1108,11 +1117,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         arrival_story: data.arrivalStory || null,
         special_trait: data.specialTrait || null,
         pet_memory_quote: data.petMemoryQuote || null,
-      })
-      .select()
-      .single();
+      });
 
-    if (error || !row) {
+    if (error) {
       // code 42501 = RLS insuficiente — casi siempre significa que la sesión
       // se cayó justo entre el getSession() de arriba y este insert (p. ej.
       // el usuario cerró sesión en otra pestaña). Nunca mostrar el texto
@@ -1127,23 +1134,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } else {
         notify("error", "No se pudo crear la MEMORA", error?.message || "Intenta nuevamente.");
       }
-      throw error || new Error("No se pudo crear la MEMORA");
+      throw error;
     }
 
     // Nota: privacy="password" aún no protege de verdad (requiere hashear
     // server-side — ver Fase 4 del plan); se guarda sin password_hash por ahora.
     await supabase.from("albums").insert({
-      memorial_id: row.id,
+      memorial_id: newId,
       title: "Recuerdos Inolvidables",
       description: "Momentos y fotografías atesoradas en el corazón.",
       cover_url: data.mainPhoto || "https://images.unsplash.com/photo-1511895426328-dc8714191300?auto=format&fit=crop&w=600&q=80",
       item_count: 0,
     });
 
-    const full = await fetchMemorialsByFilter({ ids: [row.id] });
-    const finalMemorial =
-      full[0] ||
-      mapMemorialRow(row, { timeline: [], media: [], albums: [], tributes: [], tributeReplies: [], family: [], events: [], collaborators: [] });
+    const full = await fetchMemorialsByFilter({ ids: [newId] });
+    if (!full[0]) {
+      // Rarísimo: el insert confirmó sin error pero el fetch aparte no trajo
+      // nada. No hay una fila de DB completa para construir un fallback
+      // razonable client-side — mejor pedir que revise su panel que mostrar
+      // un memorial con datos inventados.
+      notify(
+        "warning",
+        "MEMORA creada, pero no se pudo cargar",
+        "Refresca la página — tu MEMORA ya está guardada."
+      );
+      throw new Error("Insert confirmado pero fetchMemorialsByFilter no devolvió la fila.");
+    }
+    const finalMemorial = full[0];
 
     setMemorials((prev) => [finalMemorial, ...prev]);
     notify("success", "MEMORA creada con éxito", `El espacio conmemorativo de ${finalMemorial.personName} está listo.`);
