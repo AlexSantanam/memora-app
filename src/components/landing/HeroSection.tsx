@@ -1,6 +1,7 @@
 import React from "react";
 import { useApp } from "../../context/AppContext";
 import { Sparkles, Heart, Shield, ArrowRight, Play, QrCode } from "lucide-react";
+import { HeroMemorialSearch } from "./HeroMemorialSearch";
 
 export const HeroSection: React.FC = () => {
   const { setCurrentView, setIsAuthModalOpen, setAuthModalMode, isAuthenticated, openMemorialBySlug } = useApp();
@@ -16,7 +17,10 @@ export const HeroSection: React.FC = () => {
           
           {/* Left Column: Emotional Storytelling & CTAs */}
           <div className="lg:col-span-7 space-y-7 text-center lg:text-left">
-            
+
+            {/* Buscador — arriba de todo, visible sin scroll */}
+            <HeroMemorialSearch />
+
             {/* Trust Pill */}
             <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#F4EFEA] border border-[#D8CEBE] text-xs sm:text-sm font-medium text-[#7A4E38] shadow-xs">
               <Heart className="w-4 h-4 text-[#C5A880] fill-[#C5A880]/20" />

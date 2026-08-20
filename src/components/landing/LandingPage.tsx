@@ -1,6 +1,5 @@
 import React from "react";
 import { HeroSection } from "./HeroSection";
-import { MemorialSearchSection } from "./MemorialSearchSection";
 import { ValueMessageSection } from "./ValueMessageSection";
 import { UseCasesSection } from "./UseCasesSection";
 import { HowItWorksSection } from "./HowItWorksSection";
@@ -18,7 +17,6 @@ export const LandingPage: React.FC = () => {
   return (
     <div className="space-y-0">
       <HeroSection />
-      <MemorialSearchSection />
       <ValueMessageSection />
       <UseCasesSection />
       <div id="como-funciona">
