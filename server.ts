@@ -289,7 +289,7 @@ async function startServer() {
             relation: ["delegate_permission/common.handle_all_urls"],
             target: {
               namespace: "android_app",
-              package_name: "cl.memora.app",
+              package_name: "lat.memora.twa",
               sha256_cert_fingerprints: [fingerprint],
             },
           },
@@ -1440,6 +1440,54 @@ Genera 3 opciones de mensajes diferentes en formato JSON:
       planId: planId || "para_siempre",
       message: "Pago verificado exitosamente mediante webhook seguro.",
     });
+  });
+
+  // Contact form — the form previously only showed a fake "sent" toast with
+  // no actual delivery anywhere. Sends to contacto@memora.lat via Resend
+  // (same service already used for payment receipts), with reply-to set to
+  // the submitter so replying in the inbox goes straight back to them.
+  app.post("/api/contact", async (req, res) => {
+    try {
+      const { name, email, topic, message } = req.body;
+      if (!name || !email || !message) {
+        return res.status(400).json({ success: false, error: "Nombre, correo y mensaje son requeridos." });
+      }
+      if (!resend) {
+        console.warn("[Contact Form] Resend no configurado — no se pudo enviar el mensaje de", email);
+        return res.status(500).json({ success: false, error: "Servicio de correo no configurado." });
+      }
+
+      const topicLabels: Record<string, string> = {
+        editorial: "Ayuda con la redacción de la biografía",
+        billing: "Consultas sobre planes y facturación",
+        general: "Otra consulta o sugerencia",
+      };
+
+      const { error } = await resend.emails.send({
+        from: RECEIPT_FROM_EMAIL,
+        to: "contacto@memora.lat",
+        replyTo: email,
+        subject: `[Contacto MEMORA] ${topicLabels[topic] || topic || "Consulta"} — ${name}`,
+        html: `
+          <div style="font-family:Arial,sans-serif;font-size:14px;color:#24201D;line-height:1.6;">
+            <p><strong>Nombre:</strong> ${name}</p>
+            <p><strong>Correo:</strong> ${email}</p>
+            <p><strong>Tema:</strong> ${topicLabels[topic] || topic || "Consulta"}</p>
+            <p><strong>Mensaje:</strong></p>
+            <p style="white-space:pre-line;background:#FAF7F2;padding:16px;border-radius:12px;">${message}</p>
+          </div>`,
+      });
+
+      if (error) {
+        console.error("[Contact Form] Resend error:", error);
+        return res.status(500).json({ success: false, error: error.message });
+      }
+
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("[Contact Form] Failed:", err);
+      res.status(500).json({ success: false, error: "Error al enviar el mensaje." });
+    }
   });
 
   // SEO landing page targeting "código QR para lápida/memorial" searches —

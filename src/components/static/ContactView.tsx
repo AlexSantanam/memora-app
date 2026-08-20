@@ -10,11 +10,26 @@ export const ContactView: React.FC = () => {
   const [topic, setTopic] = useState("editorial");
   const [message, setMessage] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [isSending, setIsSending] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSubmitted(true);
-    notify("success", "Mensaje enviado", "Nuestro equipo de acompañamiento se comunicará contigo prontamente.");
+    setIsSending(true);
+    try {
+      const res = await fetch("/api/contact", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, email, topic, message }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || "No se pudo enviar el mensaje.");
+      setSubmitted(true);
+      notify("success", "Mensaje enviado", "Nuestro equipo de acompañamiento se comunicará contigo prontamente.");
+    } catch (err: any) {
+      notify("error", "No se pudo enviar tu mensaje", "Intenta nuevamente o escríbenos por WhatsApp.");
+    } finally {
+      setIsSending(false);
+    }
   };
 
   return (
@@ -141,10 +156,11 @@ export const ContactView: React.FC = () => {
 
             <button
               type="submit"
-              className="w-full py-3.5 rounded-full bg-[#24201D] text-white hover:bg-[#3D3530] font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all shadow-xs cursor-pointer"
+              disabled={isSending}
+              className="w-full py-3.5 rounded-full bg-[#24201D] text-white hover:bg-[#3D3530] font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all shadow-xs cursor-pointer disabled:opacity-50"
             >
               <Send className="w-4 h-4 text-[#C5A880]" />
-              <span>Enviar Mensaje al Equipo MEMORA</span>
+              <span>{isSending ? "Enviando..." : "Enviar Mensaje al Equipo MEMORA"}</span>
             </button>
           </form>
         )}
