@@ -7,7 +7,7 @@ export const HeroSection: React.FC = () => {
   const { setCurrentView, setIsAuthModalOpen, setAuthModalMode, isAuthenticated, openMemorialBySlug } = useApp();
 
   return (
-    <section className="relative overflow-hidden bg-[#FAF7F2] pt-12 pb-20 lg:pt-16 lg:pb-28">
+    <section className="relative overflow-hidden bg-[#FAF7F2] pt-5 pb-20 lg:pt-6 lg:pb-28">
       {/* Delicate warm atmosphere background accents */}
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[500px] bg-[#EAE3D9]/50 rounded-full blur-3xl pointer-events-none -z-10"></div>
       <div className="absolute top-12 right-10 w-72 h-72 bg-[#C5A880]/10 rounded-full blur-2xl pointer-events-none -z-10"></div>
