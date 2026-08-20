@@ -218,14 +218,20 @@ function signTributeAction(tributeId: string, action: "approve" | "reject"): str
   return crypto.createHmac("sha256", SUPABASE_SERVICE_ROLE_KEY).update(`${tributeId}:${action}`).digest("hex");
 }
 
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-  httpOptions: {
-    headers: {
-      "User-Agent": "aistudio-build",
-    },
-  },
-});
+// Solo se construye si hay key: el SDK imprime "API key should be set..."
+// en stdout apenas se instancia el cliente, sin importar si luego se usa —
+// con Gemini bloqueado del lado de Google (ver generateJsonWithAI) y sin
+// key configurada, instanciarlo igual solo ensuciaba los logs de Railway.
+const ai = process.env.GEMINI_API_KEY
+  ? new GoogleGenAI({
+      apiKey: process.env.GEMINI_API_KEY,
+      httpOptions: {
+        headers: {
+          "User-Agent": "aistudio-build",
+        },
+      },
+    })
+  : null;
 
 const GROQ_API_KEY = process.env.GROQ_API_KEY || "";
 
@@ -235,7 +241,7 @@ const GROQ_API_KEY = process.env.GROQ_API_KEY || "";
 // unavailable or fails. Returns null if both fail, so callers can fall
 // back to the local template.
 async function generateJsonWithAI(prompt: string): Promise<any | null> {
-  if (process.env.GEMINI_API_KEY) {
+  if (ai) {
     try {
       const response = await ai.models.generateContent({
         model: "gemini-3.5-flash",
