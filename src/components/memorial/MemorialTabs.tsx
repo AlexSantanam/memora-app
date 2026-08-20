@@ -713,36 +713,56 @@ export const MemorialTabs: React.FC<MemorialTabsProps> = ({
                 const isCenterTier = tier === "pareja_hermano";
                 if (members.length === 0 && !isCenterTier) return null;
 
+                // Split pareja/hermano members evenly on each side so the
+                // memorial's protagonist always lands dead-center, regardless
+                // of how many of them there are (or whether the count is odd).
+                const leftMembers = isCenterTier ? members.slice(0, Math.ceil(members.length / 2)) : [];
+                const rightMembers = isCenterTier ? members.slice(Math.ceil(members.length / 2)) : members;
+
+                const renderMemberNode = (fam: FamilyMember) => (
+                  <div key={fam.id} className="flex flex-col items-center gap-2 w-20">
+                    <div className="w-14 h-14 rounded-full overflow-hidden bg-stone-100 border border-[#D8CEBE] flex-shrink-0">
+                      <img
+                        src={fam.photoUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80"}
+                        alt={fam.name}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    <div className="text-center">
+                      <p className="text-[11px] font-serif font-semibold text-[#24201D] leading-tight">{fam.name}</p>
+                      <span className="text-[10px] text-[#7A4E38]">{fam.relationship}</span>
+                    </div>
+                  </div>
+                );
+
+                const mainPersonNode = (
+                  <div className="flex flex-col items-center gap-2 w-20">
+                    <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-[#C5A880] shadow-md flex-shrink-0">
+                      <img src={memorial.mainPhoto} alt={memorial.personName} className="w-full h-full object-cover" />
+                    </div>
+                    <div className="text-center">
+                      <p className="text-xs font-serif font-semibold text-[#24201D] leading-tight">{memorial.personName}</p>
+                      <span className="text-[10px] text-[#C5A880] font-semibold uppercase tracking-wide">En su memoria</span>
+                    </div>
+                  </div>
+                );
+
                 return (
                   <div key={tier}>
-                    <div className="flex flex-wrap items-start justify-center gap-8">
-                      {isCenterTier && (
-                        <div className="flex flex-col items-center gap-2 w-20">
-                          <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-[#C5A880] shadow-md flex-shrink-0">
-                            <img src={memorial.mainPhoto} alt={memorial.personName} className="w-full h-full object-cover" />
-                          </div>
-                          <div className="text-center">
-                            <p className="text-xs font-serif font-semibold text-[#24201D] leading-tight">{memorial.personName}</p>
-                            <span className="text-[10px] text-[#C5A880] font-semibold uppercase tracking-wide">En su memoria</span>
-                          </div>
-                        </div>
-                      )}
-                      {members.map((fam) => (
-                        <div key={fam.id} className="flex flex-col items-center gap-2 w-20">
-                          <div className="w-14 h-14 rounded-full overflow-hidden bg-stone-100 border border-[#D8CEBE] flex-shrink-0">
-                            <img
-                              src={fam.photoUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80"}
-                              alt={fam.name}
-                              className="w-full h-full object-cover"
-                            />
-                          </div>
-                          <div className="text-center">
-                            <p className="text-[11px] font-serif font-semibold text-[#24201D] leading-tight">{fam.name}</p>
-                            <span className="text-[10px] text-[#7A4E38]">{fam.relationship}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                    {isCenterTier ? (
+                      // Three equal-width columns so the protagonist's column
+                      // always lands at the true horizontal center, no matter
+                      // how many people end up on either side (even zero).
+                      <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-4">
+                        <div className="flex flex-wrap items-start justify-end gap-8">{leftMembers.map(renderMemberNode)}</div>
+                        {mainPersonNode}
+                        <div className="flex flex-wrap items-start justify-start gap-8">{rightMembers.map(renderMemberNode)}</div>
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap items-start justify-center gap-8">
+                        {members.map(renderMemberNode)}
+                      </div>
+                    )}
                     {tierIdx < tiers.length - 1 && (
                       <div className="w-px h-6 bg-[#D8CEBE] mx-auto"></div>
                     )}
