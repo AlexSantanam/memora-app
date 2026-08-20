@@ -1028,6 +1028,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     if (!currentUser) throw new Error("Debes iniciar sesión para crear una MEMORA.");
 
+    // El wizard puede quedar abierto varios minutos (fotos, biografía con IA,
+    // revisión) — tiempo suficiente para que el access token expire. getSession()
+    // lo renueva sola si aún hay un refresh token válido; si no hay sesión en
+    // absoluto, el insert de abajo llegaría como anónimo y Postgres lo rechazaría
+    // con un error de RLS que no le dice nada útil al usuario ("revisa los
+    // campos" cuando el problema real es la sesión) — se detecta acá antes.
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (!session) {
+      notify(
+        "error",
+        "Tu sesión expiró",
+        "Ha pasado demasiado tiempo desde que iniciaste sesión. Vuelve a iniciar sesión y tu información no se perderá."
+      );
+      throw new Error("Sesión expirada — inicia sesión nuevamente.");
+    }
+
     const baseSlug = (data.personName || "recuerdo-eterno")
       .toLowerCase()
       .normalize("NFD")
@@ -1079,7 +1097,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       .single();
 
     if (error || !row) {
-      notify("error", "No se pudo crear la MEMORA", error?.message || "Intenta nuevamente.");
+      // code 42501 = RLS insuficiente — casi siempre significa que la sesión
+      // se cayó justo entre el getSession() de arriba y este insert (p. ej.
+      // el usuario cerró sesión en otra pestaña). Nunca mostrar el texto
+      // crudo de Postgres ("new row violates row-level security policy...")
+      // a un usuario final, no significa nada para alguien no técnico.
+      if (error?.code === "42501") {
+        notify(
+          "error",
+          "Tu sesión expiró",
+          "Vuelve a iniciar sesión y tu información no se perderá."
+        );
+      } else {
+        notify("error", "No se pudo crear la MEMORA", error?.message || "Intenta nuevamente.");
+      }
       throw error || new Error("No se pudo crear la MEMORA");
     }
 

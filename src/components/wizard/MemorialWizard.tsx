@@ -264,7 +264,10 @@ export const MemorialWizard: React.FC = () => {
       // Navigate to created memorial
       openMemorialBySlug(created.slug);
     } catch (e) {
-      notify("error", "Error al crear el memorial", "Por favor revisa los campos e intenta nuevamente.");
+      // createMemorial() ya mostró un aviso específico (sesión expirada,
+      // límite de plan, error de base de datos) — un segundo toast genérico
+      // acá solo duplica el mensaje y puede contradecirlo (p. ej. decir
+      // "revisa los campos" cuando el problema real era la sesión).
     } finally {
       setIsSubmitting(false);
     }
