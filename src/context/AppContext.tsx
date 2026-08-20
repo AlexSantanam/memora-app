@@ -1195,6 +1195,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       notify("success", "Homenaje compartido", "Gracias por dedicar tus palabras y encender una luz en su memoria.");
     } else {
       notify("info", "Homenaje enviado", "Tu mensaje será publicado una vez revisado por los administradores.");
+      fetch("/api/tributes/notify-pending", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tributeId: newTribute.id }),
+      }).catch(() => {
+        // Silencioso: si falla el aviso por correo, el homenaje igual queda
+        // pendiente y visible en el panel de moderación del dueño.
+      });
     }
   };
 

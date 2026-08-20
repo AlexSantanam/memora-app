@@ -31,7 +31,7 @@ export async function uploadAvatar(userId: string, file: File): Promise<string> 
   return supabase.storage.from("avatars").getPublicUrl(path).data.publicUrl;
 }
 
-export type MemorialAssetCategory = "main" | "cover" | "gallery" | "timeline" | "family";
+export type MemorialAssetCategory = "main" | "cover" | "gallery" | "timeline" | "family" | "tribute";
 
 // Public bucket with random unguessable paths — see 0007_public_memorial_assets.sql
 // for why this is an acceptable tradeoff for a memorial photo, not account data.

@@ -1,7 +1,8 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { Memorial } from "../../types";
 import { useApp } from "../../context/AppContext";
-import { X, Flame, Flower2, Heart, Sparkles, Image as ImageIcon, Loader2 } from "lucide-react";
+import { X, Flame, Flower2, Heart, Sparkles, Upload, Loader2 } from "lucide-react";
+import { uploadMemorialAsset, assertFileSizeOk } from "../../lib/uploadFile";
 
 interface TributeModalProps {
   memorial: Memorial;
@@ -10,14 +11,16 @@ interface TributeModalProps {
 }
 
 export const TributeModal: React.FC<TributeModalProps> = ({ memorial, isOpen, onClose }) => {
-  const { addTribute, currentUser } = useApp();
+  const { addTribute, currentUser, notify } = useApp();
   const [authorName, setAuthorName] = useState(currentUser?.name || "");
   const [relationship, setRelationship] = useState("");
   const [message, setMessage] = useState("");
   const [candleLit, setCandleLit] = useState(true);
   const [flowerPlaced, setFlowerPlaced] = useState(false);
   const [photoUrl, setPhotoUrl] = useState("");
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const photoInputRef = useRef<HTMLInputElement>(null);
 
   if (!isOpen) return null;
 
@@ -151,12 +154,50 @@ export const TributeModal: React.FC<TributeModalProps> = ({ memorial, isOpen, on
               Adjuntar fotografía memorable (opcional)
             </label>
             <input
-              type="url"
-              value={photoUrl}
-              onChange={(e) => setPhotoUrl(e.target.value)}
-              placeholder="Pega la URL de una foto para adjuntarla"
-              className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#D8CEBE] text-xs text-[#24201D] focus:outline-none focus:border-[#C5A880]"
+              type="file"
+              ref={photoInputRef}
+              accept="image/*"
+              className="hidden"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (!file) return;
+                const sizeError = assertFileSizeOk(file);
+                if (sizeError) {
+                  notify("warning", "Imagen muy pesada", sizeError);
+                  return;
+                }
+                setIsUploadingPhoto(true);
+                try {
+                  const url = await uploadMemorialAsset(memorial.id, "tribute", file);
+                  setPhotoUrl(url);
+                } catch (err: any) {
+                  notify("error", "No se pudo subir la foto", err?.message || "Intenta nuevamente.");
+                } finally {
+                  setIsUploadingPhoto(false);
+                }
+              }}
             />
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => photoInputRef.current?.click()}
+                disabled={isUploadingPhoto}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#D8CEBE] text-xs font-semibold text-[#24201D] hover:bg-[#F4EFEA] cursor-pointer"
+              >
+                {isUploadingPhoto ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-[#C5A880]" />
+                ) : (
+                  <Upload className="w-3.5 h-3.5 text-[#C5A880]" />
+                )}
+                <span>{photoUrl ? "Cambiar foto" : "Subir foto desde tu dispositivo"}</span>
+              </button>
+              {photoUrl && (
+                <div className="w-12 h-12 rounded-xl overflow-hidden border border-[#C5A880] flex-shrink-0">
+                  <img src={photoUrl} alt="Vista previa" className="w-full h-full object-cover" />
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="pt-4 flex items-center justify-end gap-3 border-t border-[#F4EFEA]">

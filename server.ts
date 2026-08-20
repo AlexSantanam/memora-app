@@ -210,6 +210,14 @@ function signFlowParams(params: Record<string, string | number>, secretKey: stri
   return crypto.createHmac("sha256", secretKey).update(toSign).digest("hex");
 }
 
+// Firma los enlaces "Aprobar"/"Rechazar" de los correos de moderación de
+// homenajes, para que nadie pueda adivinar/manipular la URL de otro homenaje.
+// Reutiliza SUPABASE_SERVICE_ROLE_KEY como secreto HMAC — ya es un secreto
+// exclusivo del servidor, sin necesitar una variable de entorno nueva.
+function signTributeAction(tributeId: string, action: "approve" | "reject"): string {
+  return crypto.createHmac("sha256", SUPABASE_SERVICE_ROLE_KEY).update(`${tributeId}:${action}`).digest("hex");
+}
+
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
   httpOptions: {
@@ -1488,6 +1496,190 @@ Genera 3 opciones de mensajes diferentes en formato JSON:
       console.error("[Contact Form] Failed:", err);
       res.status(500).json({ success: false, error: "Error al enviar el mensaje." });
     }
+  });
+
+  // Notifica al dueño de un memorial que hay un homenaje pendiente de
+  // revisión, con enlaces de un clic para aprobar/rechazar sin necesitar
+  // iniciar sesión ni abrir la app — evita que el doliente deba entrar a
+  // revisar manualmente cada mensaje. Se llama desde el cliente justo
+  // después de crear el homenaje (ver AppContext.tsx, addTribute), pero
+  // el contenido del correo siempre se relee desde la base de datos con la
+  // service-role key, nunca se confía en lo que mande el cliente.
+  app.post("/api/tributes/notify-pending", async (req, res) => {
+    try {
+      const { tributeId } = req.body;
+      if (!tributeId) {
+        return res.status(400).json({ success: false, error: "tributeId es requerido." });
+      }
+      if (!supabaseAdmin) {
+        return res.status(500).json({ success: false, error: "Base de datos no configurada." });
+      }
+
+      const { data: tribute, error: tributeError } = await supabaseAdmin
+        .from("tributes")
+        .select("id, memorial_id, author_name, relationship, message, status")
+        .eq("id", tributeId)
+        .single();
+      if (tributeError || !tribute) {
+        return res.status(404).json({ success: false, error: "Homenaje no encontrado." });
+      }
+      if (tribute.status !== "pending") {
+        return res.json({ success: true, skipped: true });
+      }
+
+      const { data: memorial, error: memorialError } = await supabaseAdmin
+        .from("memorials")
+        .select("id, slug, person_name, owner_email")
+        .eq("id", tribute.memorial_id)
+        .single();
+      if (memorialError || !memorial || !memorial.owner_email) {
+        return res.status(404).json({ success: false, error: "Memorial no encontrado." });
+      }
+
+      if (!resend) {
+        console.warn("[Tribute Notify] Resend no configurado — omitiendo notificación para", memorial.owner_email);
+        return res.json({ success: false, error: "Servicio de correo no configurado." });
+      }
+
+      const origin = process.env.APP_URL || "https://memora.lat";
+      const approveUrl = `${origin}/api/tributes/${tribute.id}/moderate?action=approve&token=${signTributeAction(tribute.id, "approve")}`;
+      const rejectUrl = `${origin}/api/tributes/${tribute.id}/moderate?action=reject&token=${signTributeAction(tribute.id, "reject")}`;
+      const memorialUrl = `${origin}/m/${memorial.slug}`;
+
+      const html = `
+      <div style="background-color:#FAF7F2;padding:40px 16px;font-family:Georgia,'Times New Roman',serif;">
+        <div style="max-width:520px;margin:0 auto;background:#ffffff;border-radius:24px;overflow:hidden;border:1px solid #EAE3D9;">
+          <div style="background-color:#24201D;padding:32px 32px 28px;text-align:center;">
+            <div style="font-family:Georgia,serif;font-size:22px;color:#ffffff;letter-spacing:1px;">MEMORA</div>
+            <div style="font-family:Arial,sans-serif;font-size:10px;color:#C5A880;letter-spacing:2px;text-transform:uppercase;margin-top:2px;">Recuerdos para siempre</div>
+          </div>
+          <div style="padding:32px;">
+            <p style="font-family:Arial,sans-serif;font-size:11px;color:#7A4E38;text-transform:uppercase;letter-spacing:1px;font-weight:bold;margin:0 0 4px;">Nuevo homenaje pendiente</p>
+            <h1 style="font-family:Georgia,serif;font-size:20px;color:#24201D;margin:0 0 16px;font-weight:normal;">Alguien dejó unas palabras para ${memorial.person_name}</h1>
+            <p style="font-family:Arial,sans-serif;font-size:13px;color:#5C534B;line-height:1.6;margin:0 0 8px;">
+              <strong>${tribute.author_name}</strong>${tribute.relationship ? ` (${tribute.relationship})` : ""} escribió:
+            </p>
+            <p style="font-family:Arial,sans-serif;font-size:13px;color:#24201D;line-height:1.6;white-space:pre-line;background:#FAF7F2;padding:16px;border-radius:12px;margin:0 0 24px;">${tribute.message}</p>
+            <p style="font-family:Arial,sans-serif;font-size:12px;color:#8C827A;margin:0 0 20px;">
+              Revísalo y decide si publicarlo en la memoria de ${memorial.person_name}. No necesitas iniciar sesión.
+            </p>
+            <table style="width:100%;border-collapse:collapse;">
+              <tr>
+                <td style="padding-right:8px;width:50%;">
+                  <a href="${approveUrl}" style="display:block;text-align:center;padding:12px 0;border-radius:999px;background-color:#24201D;color:#ffffff;font-family:Arial,sans-serif;font-size:13px;font-weight:bold;text-decoration:none;">Aprobar</a>
+                </td>
+                <td style="padding-left:8px;width:50%;">
+                  <a href="${rejectUrl}" style="display:block;text-align:center;padding:12px 0;border-radius:999px;background-color:#ffffff;color:#7A4E38;border:1px solid #D8CEBE;font-family:Arial,sans-serif;font-size:13px;font-weight:bold;text-decoration:none;">Rechazar</a>
+                </td>
+              </tr>
+            </table>
+            <p style="font-family:Arial,sans-serif;font-size:11px;color:#8C827A;line-height:1.6;margin:24px 0 0;text-align:center;">
+              <a href="${memorialUrl}" style="color:#7A4E38;">Ver el memorial completo</a>
+            </p>
+          </div>
+          <div style="background-color:#F4EFEA;padding:16px 32px;text-align:center;font-family:Arial,sans-serif;font-size:10px;color:#8C827A;">
+            © ${new Date().getFullYear()} MEMORA · Puedes cambiar la aprobación automática desde "Editar Memorial".
+          </div>
+        </div>
+      </div>`;
+
+      const { error } = await resend.emails.send({
+        from: RECEIPT_FROM_EMAIL,
+        to: memorial.owner_email,
+        subject: `Nuevo homenaje pendiente de revisión — ${memorial.person_name}`,
+        html,
+      });
+
+      if (error) {
+        console.error("[Tribute Notify] Resend error:", error);
+        return res.status(500).json({ success: false, error: error.message });
+      }
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("[Tribute Notify] Failed:", err);
+      res.status(500).json({ success: false, error: "Error al enviar la notificación." });
+    }
+  });
+
+  // Aprobar/rechazar un homenaje con un clic desde el correo de notificación,
+  // sin requerir sesión iniciada. El token HMAC (signTributeAction) es lo que
+  // impide que alguien adivine o comparta esta URL para moderar un homenaje
+  // ajeno — nunca se confía solo en que la URL sea "difícil de adivinar".
+  app.get("/api/tributes/:id/moderate", async (req, res) => {
+    const { id } = req.params;
+    const action = req.query.action === "reject" ? "reject" : req.query.action === "approve" ? "approve" : null;
+    const token = typeof req.query.token === "string" ? req.query.token : "";
+
+    const renderPage = (title: string, message: string, ok: boolean) => `<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${title} — MEMORA</title>
+<style>
+  body{margin:0;background:#FAF7F2;font-family:Georgia,'Times New Roman',serif;color:#24201D;display:flex;min-height:100vh;align-items:center;justify-content:center;padding:24px;}
+  .card{max-width:420px;background:#fff;border:1px solid #EAE3D9;border-radius:24px;padding:40px 32px;text-align:center;}
+  h1{font-size:20px;font-weight:normal;margin:0 0 12px;}
+  p{font-family:Arial,sans-serif;font-size:13px;color:#5C534B;line-height:1.6;margin:0;}
+  a{display:inline-block;margin-top:24px;padding:10px 24px;border-radius:999px;background:#24201D;color:#fff;font-family:Arial,sans-serif;font-size:13px;text-decoration:none;}
+  .icon{font-size:32px;margin-bottom:8px;}
+</style></head>
+<body><div class="card">
+  <div class="icon">${ok ? "🕊️" : "⚠️"}</div>
+  <h1>${title}</h1>
+  <p>${message}</p>
+  <a href="https://memora.lat">Ir a MEMORA</a>
+</div></body></html>`;
+
+    if (!action || !token) {
+      return res.status(400).send(renderPage("Enlace inválido", "Faltan datos en el enlace.", false));
+    }
+    if (!supabaseAdmin) {
+      return res.status(500).send(renderPage("No disponible", "Base de datos no configurada.", false));
+    }
+
+    const expectedToken = signTributeAction(id, action);
+    const validToken =
+      token.length === expectedToken.length &&
+      crypto.timingSafeEqual(Buffer.from(token), Buffer.from(expectedToken));
+    if (!validToken) {
+      return res.status(403).send(renderPage("Enlace no válido", "Este enlace de moderación no es válido o fue alterado.", false));
+    }
+
+    const { data: tribute, error: tributeError } = await supabaseAdmin
+      .from("tributes")
+      .select("id, memorial_id, status, author_name")
+      .eq("id", id)
+      .single();
+    if (tributeError || !tribute) {
+      return res.status(404).send(renderPage("No encontrado", "Este homenaje ya no existe.", false));
+    }
+
+    const { data: memorial } = await supabaseAdmin
+      .from("memorials")
+      .select("slug, person_name")
+      .eq("id", tribute.memorial_id)
+      .single();
+    const memorialUrl = memorial ? `${process.env.APP_URL || "https://memora.lat"}/m/${memorial.slug}` : "https://memora.lat";
+
+    if (tribute.status !== "pending") {
+      const already = tribute.status === "approved" ? "aprobado" : "rechazado";
+      return res.send(renderPage("Ya procesado", `Este homenaje de ${tribute.author_name} ya había sido ${already} anteriormente.`, true).replace(
+        'href="https://memora.lat"',
+        `href="${memorialUrl}"`
+      ));
+    }
+
+    const newStatus = action === "approve" ? "approved" : "rejected";
+    const { error: updateError } = await supabaseAdmin.from("tributes").update({ status: newStatus }).eq("id", id);
+    if (updateError) {
+      console.error("[Tribute Moderate] Update failed:", updateError);
+      return res.status(500).send(renderPage("Error", "No se pudo actualizar el homenaje. Intenta nuevamente.", false));
+    }
+
+    const title = action === "approve" ? "Homenaje aprobado" : "Homenaje rechazado";
+    const message =
+      action === "approve"
+        ? `El mensaje de ${tribute.author_name} ya está publicado en la memoria de ${memorial?.person_name || "tu ser querido"}.`
+        : `El mensaje de ${tribute.author_name} no será publicado.`;
+    res.send(renderPage(title, message, true).replace('href="https://memora.lat"', `href="${memorialUrl}"`));
   });
 
   // SEO landing page targeting "código QR para lápida/memorial" searches —
