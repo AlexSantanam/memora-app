@@ -719,27 +719,59 @@ export const MemorialTabs: React.FC<MemorialTabsProps> = ({
                 const leftMembers = isCenterTier ? members.slice(0, Math.ceil(members.length / 2)) : [];
                 const rightMembers = isCenterTier ? members.slice(Math.ceil(members.length / 2)) : members;
 
-                const renderMemberNode = (fam: FamilyMember) => (
-                  <div key={fam.id} className="flex flex-col items-center gap-2 w-20">
-                    <div className="w-14 h-14 rounded-full overflow-hidden bg-stone-100 border border-[#D8CEBE] flex-shrink-0">
-                      <img
-                        src={fam.photoUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80"}
-                        alt={fam.name}
-                        className="w-full h-full object-cover"
-                      />
+                const renderMemberNode = (fam: FamilyMember) => {
+                  const photoUrl = fam.photoUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80";
+                  return (
+                    <div key={fam.id} className="flex flex-col items-center gap-2 w-20">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onOpenMediaLightbox({
+                            id: fam.id,
+                            memorialId: memorial.id,
+                            type: "photo",
+                            url: photoUrl,
+                            title: fam.name,
+                            description: fam.relationship,
+                            uploaderName: memorial.personName,
+                            status: "approved",
+                            uploadedAt: "",
+                          })
+                        }
+                        className="w-14 h-14 rounded-full overflow-hidden bg-stone-100 border border-[#D8CEBE] flex-shrink-0 cursor-pointer hover:border-[#C5A880] transition-colors"
+                        title="Ver foto en grande"
+                      >
+                        <img src={photoUrl} alt={fam.name} className="w-full h-full object-cover" />
+                      </button>
+                      <div className="text-center">
+                        <p className="text-[11px] font-serif font-semibold text-[#24201D] leading-tight">{fam.name}</p>
+                        <span className="text-[10px] text-[#7A4E38]">{fam.relationship}</span>
+                      </div>
                     </div>
-                    <div className="text-center">
-                      <p className="text-[11px] font-serif font-semibold text-[#24201D] leading-tight">{fam.name}</p>
-                      <span className="text-[10px] text-[#7A4E38]">{fam.relationship}</span>
-                    </div>
-                  </div>
-                );
+                  );
+                };
 
                 const mainPersonNode = (
-                  <div className="flex flex-col items-center gap-2 w-20">
-                    <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-[#C5A880] shadow-md flex-shrink-0">
+                  <div className="flex flex-col items-center gap-2 w-24">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onOpenMediaLightbox({
+                          id: `${memorial.id}-main`,
+                          memorialId: memorial.id,
+                          type: "photo",
+                          url: memorial.mainPhoto,
+                          title: memorial.personName,
+                          uploaderName: memorial.personName,
+                          status: "approved",
+                          uploadedAt: "",
+                        })
+                      }
+                      className="w-[73px] h-[73px] rounded-full overflow-hidden border-2 border-[#C5A880] shadow-md flex-shrink-0 cursor-pointer hover:opacity-90 transition-opacity"
+                      title="Ver foto en grande"
+                    >
                       <img src={memorial.mainPhoto} alt={memorial.personName} className="w-full h-full object-cover" />
-                    </div>
+                    </button>
                     <div className="text-center">
                       <p className="text-xs font-serif font-semibold text-[#24201D] leading-tight">{memorial.personName}</p>
                       <span className="text-[10px] text-[#C5A880] font-semibold uppercase tracking-wide">En su memoria</span>
@@ -778,21 +810,37 @@ export const MemorialTabs: React.FC<MemorialTabsProps> = ({
             <div className="pt-6 border-t border-[#EAE3D9] space-y-4">
               <h3 className="font-serif text-lg text-[#24201D] font-medium text-center">Amigos Cercanos</h3>
               <div className="flex flex-wrap items-start justify-center gap-6">
-                {familyByGeneration.amigo.map((fam) => (
-                  <div key={fam.id} className="flex flex-col items-center gap-2 w-20">
-                    <div className="w-14 h-14 rounded-full overflow-hidden bg-stone-100 border border-[#D8CEBE] flex-shrink-0">
-                      <img
-                        src={fam.photoUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80"}
-                        alt={fam.name}
-                        className="w-full h-full object-cover"
-                      />
+                {familyByGeneration.amigo.map((fam) => {
+                  const photoUrl = fam.photoUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80";
+                  return (
+                    <div key={fam.id} className="flex flex-col items-center gap-2 w-20">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onOpenMediaLightbox({
+                            id: fam.id,
+                            memorialId: memorial.id,
+                            type: "photo",
+                            url: photoUrl,
+                            title: fam.name,
+                            description: fam.relationship,
+                            uploaderName: memorial.personName,
+                            status: "approved",
+                            uploadedAt: "",
+                          })
+                        }
+                        className="w-14 h-14 rounded-full overflow-hidden bg-stone-100 border border-[#D8CEBE] flex-shrink-0 cursor-pointer hover:border-[#C5A880] transition-colors"
+                        title="Ver foto en grande"
+                      >
+                        <img src={photoUrl} alt={fam.name} className="w-full h-full object-cover" />
+                      </button>
+                      <div className="text-center">
+                        <p className="text-[11px] font-serif font-semibold text-[#24201D] leading-tight">{fam.name}</p>
+                        <span className="text-[10px] text-[#7A4E38]">{fam.relationship}</span>
+                      </div>
                     </div>
-                    <div className="text-center">
-                      <p className="text-[11px] font-serif font-semibold text-[#24201D] leading-tight">{fam.name}</p>
-                      <span className="text-[10px] text-[#7A4E38]">{fam.relationship}</span>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
