@@ -1,0 +1,40 @@
+{
+  "packageId": "cl.memora.app",
+  "host": "memora.lat",
+  "name": "MEMORA — Recuerdos Para Siempre",
+  "launcherName": "MEMORA",
+  "display": "standalone",
+  "themeColor": "#24201D",
+  "themeColorDark": "#24201D",
+  "navigationColor": "#24201D",
+  "navigationColorDark": "#24201D",
+  "navigationDividerColor": "#24201D",
+  "navigationDividerColorDark": "#24201D",
+  "backgroundColor": "#FAF7F2",
+  "enableNotifications": false,
+  "startUrl": "/",
+  "iconUrl": "https://memora.lat/icons/icon-512.png",
+  "maskableIconUrl": "https://memora.lat/icons/icon-512.png",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "path": "./android.keystore",
+    "alias": "memora"
+  },
+  "appVersionName": "1.0.0",
+  "appVersionCode": 1,
+  "shortcuts": [],
+  "generatorApp": "Bubblewrap",
+  "webManifestUrl": "https://memora.lat/manifest.webmanifest",
+  "fallbackType": "customtabs",
+  "features": {},
+  "alphaDependencies": {
+    "enabled": false
+  },
+  "enableSiteSettingsShortcut": true,
+  "isChromeOSOnly": false,
+  "isMetaQuest": false,
+  "fullScopeUrl": "https://memora.lat/",
+  "minSdkVersion": 21,
+  "orientation": "default",
+  "fingerprints": []
+}

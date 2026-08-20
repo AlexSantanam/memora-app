@@ -276,6 +276,29 @@ async function startServer() {
   app.use(express.json({ limit: "25mb" }));
   app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 
+  // Digital Asset Links — proves memora.lat and the Android app (TWA) belong
+  // to the same owner, so the app opens the site full-screen with no browser
+  // UI instead of falling back to a regular Custom Tab. ANDROID_APP_SHA256_FINGERPRINT
+  // gets set once the signing key exists (see twa-manifest.json); the route
+  // is harmless and simply empty until then.
+  app.get("/.well-known/assetlinks.json", (_req, res) => {
+    const fingerprint = process.env.ANDROID_APP_SHA256_FINGERPRINT || "";
+    const entries = fingerprint
+      ? [
+          {
+            relation: ["delegate_permission/common.handle_all_urls"],
+            target: {
+              namespace: "android_app",
+              package_name: "cl.memora.app",
+              sha256_cert_fingerprints: [fingerprint],
+            },
+          },
+        ]
+      : [];
+    res.header("Content-Type", "application/json");
+    res.json(entries);
+  });
+
   // Sitemap — only memorials the owner has actually chosen to make public and
   // published belong here. "unlisted"/"private"/"password" memorials must
   // never appear (that's the whole point of those privacy levels: reachable
