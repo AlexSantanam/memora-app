@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Memorial, Tribute, MediaItem, TimelineEvent, FamilyMember, MemorialEvent } from "../../types";
 import { useApp } from "../../context/AppContext";
+import { getYouTubeThumbnail } from "../../lib/youtube";
 import {
   BookOpen,
   Image as ImageIcon,
@@ -18,6 +19,7 @@ import {
   Lock,
   Copy,
   Navigation,
+  Play,
 } from "lucide-react";
 
 interface MemorialTabsProps {
@@ -424,14 +426,31 @@ export const MemorialTabs: React.FC<MemorialTabsProps> = ({
                   onClick={() => onOpenMediaLightbox(item)}
                   className="group relative rounded-3xl overflow-hidden bg-white border border-[#EAE3D9] shadow-xs hover:shadow-lg transition-all duration-300 cursor-pointer"
                 >
-                  <div className="relative h-60 overflow-hidden bg-stone-100">
-                    <img
-                      src={item.url}
-                      alt={item.title || "Recuerdo"}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    />
+                  <div className="relative h-60 overflow-hidden bg-stone-900">
+                    {item.type === "video" ? (
+                      <>
+                        {getYouTubeThumbnail(item.url) && (
+                          <img
+                            src={getYouTubeThumbnail(item.url)!}
+                            alt={item.title || "Video"}
+                            className="w-full h-full object-cover opacity-80 group-hover:scale-105 transition-transform duration-500"
+                          />
+                        )}
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <div className="w-12 h-12 rounded-full bg-white/90 flex items-center justify-center">
+                            <Play className="w-5 h-5 text-[#24201D] fill-[#24201D] ml-0.5" />
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <img
+                        src={item.url}
+                        alt={item.title || "Recuerdo"}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      />
+                    )}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-80 group-hover:opacity-90 transition-opacity"></div>
-                    
+
                     <div className="absolute bottom-3 left-3 right-3 text-white">
                       {item.date && (
                         <span className="text-[10px] text-[#E7D7C1] font-light block">

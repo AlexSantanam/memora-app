@@ -2,6 +2,7 @@ import React, { useState, useRef } from "react";
 import { useApp } from "../../context/AppContext";
 import { Memorial, PrivacyLevel, PlanTier, TimelineEvent, FamilyMember, MemorialEvent, Collaborator } from "../../types";
 import { uploadMemorialAsset } from "../../lib/uploadFile";
+import { getYouTubeThumbnail } from "../../lib/youtube";
 import {
   Save,
   ArrowLeft,
@@ -30,6 +31,7 @@ import {
   Printer,
   Camera,
   Video,
+  Play,
   Copy,
   Edit3,
 } from "lucide-react";
@@ -105,6 +107,9 @@ export const MemorialEdit: React.FC = () => {
   const [newPhotoUrl, setNewPhotoUrl] = useState("");
   const [newPhotoTitle, setNewPhotoTitle] = useState("");
   const [newPhotoAlbum, setNewPhotoAlbum] = useState("");
+
+  const [newVideoUrl, setNewVideoUrl] = useState("");
+  const [newVideoTitle, setNewVideoTitle] = useState("");
   const [newAlbumTitle, setNewAlbumTitle] = useState("");
 
   const [newTimelineYear, setNewTimelineYear] = useState("");
@@ -213,6 +218,22 @@ export const MemorialEdit: React.FC = () => {
     });
     setNewPhotoUrl("");
     setNewPhotoTitle("");
+  };
+
+  const handleAddNewVideo = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newVideoUrl.trim()) return;
+    const added = addMediaItem(formData.id, {
+      memorialId: formData.id,
+      type: "video",
+      url: newVideoUrl.trim(),
+      title: newVideoTitle || "Video familiar",
+      uploaderName: formData.ownerName || "Administrador",
+    });
+    if (added !== false) {
+      setNewVideoUrl("");
+      setNewVideoTitle("");
+    }
   };
 
   const handleAddNewAlbum = (e: React.FormEvent) => {
@@ -1112,23 +1133,35 @@ export const MemorialEdit: React.FC = () => {
                       </button>
                     </div>
                   ) : (
-                    <div className="space-y-2">
+                    <form onSubmit={handleAddNewVideo} className="space-y-2">
                       <p className="text-xs text-[#5C534B]">
                         Tienes <strong>{userUsage.videosRemaining}</strong> de {userUsage.videosMax} videos disponibles en tu plan.
                       </p>
                       <input
                         type="text"
-                        placeholder="Enlace de video (YouTube / Vimeo / MP4)"
+                        required
+                        value={newVideoUrl}
+                        onChange={(e) => setNewVideoUrl(e.target.value)}
+                        placeholder="Enlace de YouTube del video"
                         className="w-full px-3 py-2 rounded-xl bg-white border border-[#D8CEBE] text-xs text-[#24201D]"
                       />
+                      <input
+                        type="text"
+                        value={newVideoTitle}
+                        onChange={(e) => setNewVideoTitle(e.target.value)}
+                        placeholder="Título del video (opcional)"
+                        className="w-full px-3 py-2 rounded-xl bg-white border border-[#D8CEBE] text-xs text-[#24201D]"
+                      />
+                      <p className="text-[10px] text-[#8C827A]">
+                        Sube el video a tu propia cuenta de YouTube (puede ser "No listado") y pega aquí el enlace — así el video queda bajo tu control, no ocupa espacio de tu plan de almacenamiento de fotos.
+                      </p>
                       <button
-                        type="button"
-                        onClick={() => notify("info", "Video agregado", "Tu video se ha vinculado correctamente.")}
+                        type="submit"
                         className="w-full py-2.5 rounded-full bg-[#24201D] text-white font-semibold hover:bg-[#3D3530] transition-colors"
                       >
                         Agregar Video
                       </button>
-                    </div>
+                    </form>
                   )}
                 </div>
                 <div className="text-[11px] text-[#8C827A] pt-2 border-t border-[#EAE3D9]">
@@ -1170,12 +1203,23 @@ export const MemorialEdit: React.FC = () => {
             {/* Media Items Grid */}
             <div className="space-y-3 pt-4 border-t border-[#F4EFEA]">
               <h3 className="font-serif text-lg text-[#24201D] font-medium">
-                Fotografías en este Memorial ({currentMemorial.media?.length || 0})
+                Fotos y videos en este Memorial ({currentMemorial.media?.length || 0})
               </h3>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
                 {currentMemorial.media?.map((item) => (
                   <div key={item.id} className="group relative rounded-2xl overflow-hidden bg-stone-100 border border-[#EAE3D9] aspect-square">
-                    <img src={item.url} alt={item.title} className="w-full h-full object-cover" />
+                    {item.type === "video" ? (
+                      <div className="relative w-full h-full bg-[#24201D]">
+                        {getYouTubeThumbnail(item.url) && (
+                          <img src={getYouTubeThumbnail(item.url)!} alt={item.title} className="w-full h-full object-cover opacity-70" />
+                        )}
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <Play className="w-8 h-8 text-white fill-white" />
+                        </div>
+                      </div>
+                    ) : (
+                      <img src={item.url} alt={item.title} className="w-full h-full object-cover" />
+                    )}
                     <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-between p-3 text-white">
                       <p className="text-[11px] font-medium truncate">{item.title}</p>
                       <button

@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { MediaItem } from "../../types";
+import { getYouTubeEmbedUrl } from "../../lib/youtube";
 import { X, Calendar, User, Heart, Tag, Download, Loader2 } from "lucide-react";
 
 interface MediaLightboxModalProps {
@@ -52,17 +53,29 @@ export const MediaLightboxModal: React.FC<MediaLightboxModalProps> = ({ item, is
         {/* Media Frame */}
         <div className="flex-1 bg-black flex items-center justify-center p-2 min-h-[300px] md:min-h-[500px]">
           {item.type === "video" ? (
-            <div className="text-white text-center p-6 space-y-2">
-              <p className="text-sm">Video conmemorativo</p>
-              <a
-                href={item.url}
-                target="_blank"
-                rel="noreferrer"
-                className="px-4 py-2 rounded-full bg-white text-black text-xs font-semibold inline-block"
-              >
-                Abrir video en fuente externa
-              </a>
-            </div>
+            getYouTubeEmbedUrl(item.url) ? (
+              <div className="w-full aspect-video max-h-[80vh]">
+                <iframe
+                  src={getYouTubeEmbedUrl(item.url)!}
+                  title={item.title || "Video conmemorativo"}
+                  className="w-full h-full rounded-xl"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                />
+              </div>
+            ) : (
+              <div className="text-white text-center p-6 space-y-2">
+                <p className="text-sm">Video conmemorativo</p>
+                <a
+                  href={item.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-4 py-2 rounded-full bg-white text-black text-xs font-semibold inline-block"
+                >
+                  Abrir video en fuente externa
+                </a>
+              </div>
+            )
           ) : (
             <img
               src={item.url}
