@@ -99,6 +99,31 @@ export const MemorialTabs: React.FC<MemorialTabsProps> = ({
       ? memorial.media || []
       : memorial.media?.filter((m) => m.albumId === selectedAlbumFilter) || [];
 
+  // Family members added before the "Generación" selector existed have no
+  // generation set — inferred here from their free-text relationship so the
+  // tree still groups them sensibly instead of dropping them silently.
+  const inferGeneration = (relationship: string): NonNullable<FamilyMember["generation"]> => {
+    const r = relationship.toLowerCase();
+    if (/(padre|madre|abuel|papá|mamá|papa|mama|tío|tio|tía|tia)/.test(r)) return "ascendiente";
+    if (/(esposo|esposa|pareja|cónyuge|conyuge|marido|conviviente)/.test(r)) return "pareja";
+    if (/(hermano|hermana)/.test(r)) return "hermano";
+    if (/(nieto|nieta)/.test(r)) return "nieto";
+    if (/(hijo|hija)/.test(r)) return "hijo";
+    return "amigo";
+  };
+
+  const familyByGeneration = (memorial.family || []).reduce(
+    (acc, fam) => {
+      const gen = fam.generation || inferGeneration(fam.relationship);
+      acc[gen].push(fam);
+      return acc;
+    },
+    { ascendiente: [], pareja: [], hermano: [], hijo: [], nieto: [], amigo: [] } as Record<
+      NonNullable<FamilyMember["generation"]>,
+      FamilyMember[]
+    >
+  );
+
   const tabItems = [
     {
       id: "story",
@@ -657,11 +682,11 @@ export const MemorialTabs: React.FC<MemorialTabsProps> = ({
 
       {/* TAB CONTENT: Familia & Vínculos */}
       {activeTab === "family" && (
-        <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in duration-300">
+        <div className="max-w-5xl mx-auto space-y-10 animate-in fade-in duration-300">
           <div className="flex items-center justify-between border-b border-[#EAE3D9] pb-4">
             <div>
               <h2 className="font-serif text-2xl text-[#24201D] font-medium">
-                Familia y Círculo Cercano
+                Árbol Familiar
               </h2>
               <p className="text-xs text-[#8C827A] mt-0.5">
                 Las personas que compartieron su vida y perpetúan su legado.
@@ -678,31 +703,79 @@ export const MemorialTabs: React.FC<MemorialTabsProps> = ({
             )}
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
-            {memorial.family && memorial.family.length > 0 ? (
-              memorial.family.map((fam) => (
-                <div
-                  key={fam.id}
-                  className="bg-white rounded-3xl p-5 border border-[#EAE3D9] flex items-center gap-4 shadow-xs"
-                >
-                  <div className="w-14 h-14 rounded-2xl overflow-hidden bg-stone-100 border border-[#D8CEBE] flex-shrink-0">
-                    <img
-                      src={fam.photoUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80"}
-                      alt={fam.name}
-                      className="w-full h-full object-cover"
-                    />
+          {memorial.family && memorial.family.length > 0 ? (
+            <div className="space-y-2">
+              {(["ascendiente", "pareja_hermano", "hijo", "nieto"] as const).map((tier, tierIdx, tiers) => {
+                const members =
+                  tier === "pareja_hermano"
+                    ? familyByGeneration.pareja.concat(familyByGeneration.hermano)
+                    : familyByGeneration[tier];
+                const isCenterTier = tier === "pareja_hermano";
+                if (members.length === 0 && !isCenterTier) return null;
+
+                return (
+                  <div key={tier}>
+                    <div className="flex flex-wrap items-start justify-center gap-8">
+                      {isCenterTier && (
+                        <div className="flex flex-col items-center gap-2 w-20">
+                          <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-[#C5A880] shadow-md flex-shrink-0">
+                            <img src={memorial.mainPhoto} alt={memorial.personName} className="w-full h-full object-cover" />
+                          </div>
+                          <div className="text-center">
+                            <p className="text-xs font-serif font-semibold text-[#24201D] leading-tight">{memorial.personName}</p>
+                            <span className="text-[10px] text-[#C5A880] font-semibold uppercase tracking-wide">En su memoria</span>
+                          </div>
+                        </div>
+                      )}
+                      {members.map((fam) => (
+                        <div key={fam.id} className="flex flex-col items-center gap-2 w-20">
+                          <div className="w-14 h-14 rounded-full overflow-hidden bg-stone-100 border border-[#D8CEBE] flex-shrink-0">
+                            <img
+                              src={fam.photoUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80"}
+                              alt={fam.name}
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+                          <div className="text-center">
+                            <p className="text-[11px] font-serif font-semibold text-[#24201D] leading-tight">{fam.name}</p>
+                            <span className="text-[10px] text-[#7A4E38]">{fam.relationship}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    {tierIdx < tiers.length - 1 && (
+                      <div className="w-px h-6 bg-[#D8CEBE] mx-auto"></div>
+                    )}
                   </div>
-                  <div>
-                    <h4 className="font-serif font-semibold text-sm text-[#24201D]">{fam.name}</h4>
-                    <span className="text-xs text-[#7A4E38] block">{fam.relationship}</span>
-                    {fam.notes && <p className="text-[11px] text-[#8C827A] mt-0.5">{fam.notes}</p>}
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-xs text-[#8C827A] text-center">No se han registrado vínculos familiares aún.</p>
+          )}
+
+          {familyByGeneration.amigo.length > 0 && (
+            <div className="pt-6 border-t border-[#EAE3D9] space-y-4">
+              <h3 className="font-serif text-lg text-[#24201D] font-medium text-center">Amigos Cercanos</h3>
+              <div className="flex flex-wrap items-start justify-center gap-6">
+                {familyByGeneration.amigo.map((fam) => (
+                  <div key={fam.id} className="flex flex-col items-center gap-2 w-20">
+                    <div className="w-14 h-14 rounded-full overflow-hidden bg-stone-100 border border-[#D8CEBE] flex-shrink-0">
+                      <img
+                        src={fam.photoUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80"}
+                        alt={fam.name}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    <div className="text-center">
+                      <p className="text-[11px] font-serif font-semibold text-[#24201D] leading-tight">{fam.name}</p>
+                      <span className="text-[10px] text-[#7A4E38]">{fam.relationship}</span>
+                    </div>
                   </div>
-                </div>
-              ))
-            ) : (
-              <p className="text-xs text-[#8C827A]">No se han registrado vínculos familiares aún.</p>
-            )}
-          </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

@@ -121,6 +121,7 @@ export const MemorialEdit: React.FC = () => {
 
   const [newFamilyName, setNewFamilyName] = useState("");
   const [newFamilyRelation, setNewFamilyRelation] = useState("");
+  const [newFamilyGeneration, setNewFamilyGeneration] = useState<FamilyMember["generation"]>("pareja");
 
   const [newEventTitle, setNewEventEventTitle] = useState("");
   const [newEventDate, setNewEventDate] = useState("");
@@ -295,6 +296,7 @@ export const MemorialEdit: React.FC = () => {
       memorialId: formData.id,
       name: newFamilyName,
       relationship: newFamilyRelation,
+      generation: newFamilyGeneration,
     });
     setNewFamilyName("");
     setNewFamilyRelation("");
@@ -1510,6 +1512,21 @@ export const MemorialEdit: React.FC = () => {
                     placeholder="Ej. Esposo, Hija mayor, Nieto..."
                     className="w-full px-3 py-2 rounded-xl bg-white border border-[#D8CEBE] text-xs text-[#24201D]"
                   />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block text-[#5C534B] mb-1">Generación (para el árbol familiar)</label>
+                  <select
+                    value={newFamilyGeneration}
+                    onChange={(e) => setNewFamilyGeneration(e.target.value as FamilyMember["generation"])}
+                    className="w-full px-3 py-2 rounded-xl bg-white border border-[#D8CEBE] text-xs text-[#24201D]"
+                  >
+                    <option value="ascendiente">Ascendiente (padre, madre, abuelo/a)</option>
+                    <option value="pareja">Pareja / Cónyuge</option>
+                    <option value="hermano">Hermano/a</option>
+                    <option value="hijo">Hijo/a</option>
+                    <option value="nieto">Nieto/a</option>
+                    <option value="amigo">Amigo/a cercano</option>
+                  </select>
                 </div>
               </div>
               <button
