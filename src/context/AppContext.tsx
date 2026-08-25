@@ -1283,6 +1283,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (newTribute.status === "approved") {
       notify("success", "Homenaje compartido", "Gracias por dedicar tus palabras y encender una luz en su memoria.");
+      fetch("/api/tributes/notify-interaction", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tributeId: newTribute.id, type: "approved" }),
+      }).catch(() => {
+        // Silencioso: es solo un aviso informativo, no debe bloquear nada.
+      });
     } else {
       notify("info", "Homenaje enviado", "Tu mensaje será publicado una vez revisado por los administradores.");
       fetch("/api/tributes/notify-pending", {
@@ -1326,6 +1333,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // de UPDATE en "tributes" solo permite escribir a owner/admin — reaccionar
   // (corazón/vela/flor) debe poder hacerlo cualquier visitante que vea el memorial.
   const addTributeReaction = (memorialId: string, tributeId: string, type: "heart" | "candle" | "flower") => {
+    // Se mira el estado ANTES de actualizar para saber si esta es la primera
+    // vez que se enciende la vela / deja la flor en este homenaje — evita
+    // avisar por correo en cada clic repetido (candleLit/flowerPlaced son
+    // booleanos de una sola vez, a diferencia de heart_count que no tiene
+    // tope, por eso "heart" nunca dispara correo: podría ser spam).
+    const currentTribute = memorials.find((m) => m.id === memorialId)?.tributes.find((t) => t.id === tributeId);
+    const isFirstTimeCandle = type === "candle" && !currentTribute?.candleLit;
+    const isFirstTimeFlower = type === "flower" && !currentTribute?.flowerPlaced;
+
     setMemorials((prev) =>
       prev.map((m) => {
         if (m.id !== memorialId) return m;
@@ -1344,6 +1360,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     supabase.rpc("react_to_tribute", { p_tribute_id: tributeId, p_reaction: type }).then(({ error }) => {
       if (error) console.error("react_to_tribute failed:", error.message);
     });
+
+    if (isFirstTimeCandle || isFirstTimeFlower) {
+      fetch("/api/tributes/notify-interaction", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tributeId, type: isFirstTimeCandle ? "candle" : "flower" }),
+      }).catch(() => {
+        // Silencioso: es solo un aviso informativo, no debe bloquear nada.
+      });
+    }
   };
 
   // Usa la función rsvp_to_event (SECURITY DEFINER) porque la política RLS

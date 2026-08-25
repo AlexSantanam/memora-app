@@ -1607,6 +1607,105 @@ Genera 3 opciones de mensajes diferentes en formato JSON:
     }
   });
 
+  // Avisa al dueño cuando alguien interactúa con la memoria — un homenaje
+  // que se publicó solo (auto-aprobación activada) o una vela/flor sobre un
+  // homenaje existente. A diferencia de notify-pending, esto es puramente
+  // informativo: no requiere ninguna acción, así que no lleva botones.
+  // No se usa para "heart" (corazones) a propósito: al no tener límite por
+  // visitante, un homenaje popular podría disparar un correo por cada clic —
+  // vela y flor sí son de una sola vez por homenaje (booleanos), así que no
+  // tienen ese riesgo de spam.
+  app.post("/api/tributes/notify-interaction", async (req, res) => {
+    try {
+      const { tributeId, type } = req.body;
+      if (!tributeId || !["approved", "candle", "flower"].includes(type)) {
+        return res.status(400).json({ success: false, error: "tributeId y type (approved|candle|flower) son requeridos." });
+      }
+      if (!supabaseAdmin) {
+        return res.status(500).json({ success: false, error: "Base de datos no configurada." });
+      }
+
+      const { data: tribute, error: tributeError } = await supabaseAdmin
+        .from("tributes")
+        .select("id, memorial_id, author_name")
+        .eq("id", tributeId)
+        .single();
+      if (tributeError || !tribute) {
+        return res.status(404).json({ success: false, error: "Homenaje no encontrado." });
+      }
+
+      const { data: memorial, error: memorialError } = await supabaseAdmin
+        .from("memorials")
+        .select("id, slug, person_name, owner_email")
+        .eq("id", tribute.memorial_id)
+        .single();
+      if (memorialError || !memorial || !memorial.owner_email) {
+        return res.status(404).json({ success: false, error: "Memorial no encontrado." });
+      }
+
+      if (!resend) {
+        console.warn("[Tribute Notify] Resend no configurado — omitiendo notificación para", memorial.owner_email);
+        return res.json({ success: false, error: "Servicio de correo no configurado." });
+      }
+
+      const origin = process.env.APP_URL || "https://memora.lat";
+      const memorialUrl = `${origin}/m/${memorial.slug}`;
+
+      const copy = {
+        approved: {
+          eyebrow: "Nuevo homenaje publicado",
+          title: `${tribute.author_name} dejó unas palabras para ${memorial.person_name}`,
+          body: "Ya quedó publicado en su memoria — no necesitas hacer nada.",
+        },
+        candle: {
+          eyebrow: "Nueva vela encendida",
+          title: `Alguien encendió una vela en memoria de ${memorial.person_name}`,
+          body: `En el homenaje de ${tribute.author_name}.`,
+        },
+        flower: {
+          eyebrow: "Nueva flor dejada",
+          title: `Alguien dejó una flor en memoria de ${memorial.person_name}`,
+          body: `En el homenaje de ${tribute.author_name}.`,
+        },
+      }[type as "approved" | "candle" | "flower"];
+
+      const html = `
+      <div style="background-color:#FAF7F2;padding:40px 16px;font-family:Georgia,'Times New Roman',serif;">
+        <div style="max-width:520px;margin:0 auto;background:#ffffff;border-radius:24px;overflow:hidden;border:1px solid #EAE3D9;">
+          <div style="background-color:#24201D;padding:32px 32px 28px;text-align:center;">
+            <div style="font-family:Georgia,serif;font-size:22px;color:#ffffff;letter-spacing:1px;">MEMORA</div>
+            <div style="font-family:Arial,sans-serif;font-size:10px;color:#C5A880;letter-spacing:2px;text-transform:uppercase;margin-top:2px;">Recuerdos para siempre</div>
+          </div>
+          <div style="padding:32px;">
+            <p style="font-family:Arial,sans-serif;font-size:11px;color:#7A4E38;text-transform:uppercase;letter-spacing:1px;font-weight:bold;margin:0 0 4px;">${copy.eyebrow}</p>
+            <h1 style="font-family:Georgia,serif;font-size:20px;color:#24201D;margin:0 0 12px;font-weight:normal;">${copy.title}</h1>
+            <p style="font-family:Arial,sans-serif;font-size:13px;color:#5C534B;line-height:1.6;margin:0 0 24px;">${copy.body}</p>
+            <a href="${memorialUrl}" style="display:block;text-align:center;padding:12px 0;border-radius:999px;background-color:#24201D;color:#ffffff;font-family:Arial,sans-serif;font-size:13px;font-weight:bold;text-decoration:none;">Ver el memorial</a>
+          </div>
+          <div style="background-color:#F4EFEA;padding:16px 32px;text-align:center;font-family:Arial,sans-serif;font-size:10px;color:#8C827A;">
+            © ${new Date().getFullYear()} MEMORA · Notificación automática de actividad en tu memorial.
+          </div>
+        </div>
+      </div>`;
+
+      const { error } = await resend.emails.send({
+        from: RECEIPT_FROM_EMAIL,
+        to: memorial.owner_email,
+        subject: `${copy.eyebrow} — ${memorial.person_name}`,
+        html,
+      });
+
+      if (error) {
+        console.error("[Tribute Notify] Resend error:", error);
+        return res.status(500).json({ success: false, error: error.message });
+      }
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("[Tribute Notify Interaction] Failed:", err);
+      res.status(500).json({ success: false, error: "Error al enviar la notificación." });
+    }
+  });
+
   // Aprobar/rechazar un homenaje con un clic desde el correo de notificación,
   // sin requerir sesión iniciada. El token HMAC (signTributeAction) es lo que
   // impide que alguien adivine o comparta esta URL para moderar un homenaje
