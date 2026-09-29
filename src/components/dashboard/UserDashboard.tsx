@@ -50,9 +50,11 @@ export const UserDashboard: React.FC = () => {
     notify,
     updateUserProfile,
     changePassword,
+    deleteAccount,
     dashboardTab: activeTab,
     setDashboardTab: setActiveTab,
   } = useApp();
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
 
   const [typeFilter, setTypeFilter] = useState<"all" | "person" | "pet">("all");
 
@@ -985,14 +987,21 @@ export const UserDashboard: React.FC = () => {
                     Si deseas cerrar tu cuenta de forma definitiva y borrar todos los memoriales asociados de nuestros servidores, puedes solicitarlo directamente.
                   </p>
                   <button
-                    onClick={() => {
-                      if (confirm("¿Estás seguro de que deseas eliminar tu cuenta y todos los memoriales? Esta acción es irreversible.")) {
-                        notify("info", "Cuenta eliminada", "Se han borrado los datos conforme a tu solicitud.");
+                    disabled={isDeletingAccount}
+                    onClick={async () => {
+                      if (!confirm("¿Estás seguro de que deseas eliminar tu cuenta y todos los memoriales? Esta acción es irreversible.")) {
+                        return;
+                      }
+                      setIsDeletingAccount(true);
+                      const result = await deleteAccount();
+                      setIsDeletingAccount(false);
+                      if (!result.success) {
+                        notify("error", "No pudimos eliminar tu cuenta", result.error);
                       }
                     }}
-                    className="px-4 py-2 rounded-xl bg-red-50 hover:bg-red-100 border border-red-200 text-xs font-semibold text-red-700 cursor-pointer"
+                    className="px-4 py-2 rounded-xl bg-red-50 hover:bg-red-100 border border-red-200 text-xs font-semibold text-red-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    Eliminar mi cuenta definitivamente
+                    {isDeletingAccount ? "Eliminando…" : "Eliminar mi cuenta definitivamente"}
                   </button>
                 </div>
               </div>

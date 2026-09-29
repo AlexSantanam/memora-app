@@ -1504,6 +1504,51 @@ Genera 3 opciones de mensajes diferentes en formato JSON:
     }
   });
 
+  // Deletes a user's account and everything they own — the client only holds
+  // the anon key, which RLS blocks from deleting auth.users or other users'
+  // rows, so this has to run server-side with the service role key. Identity
+  // comes from verifying the caller's own access token, never a client-supplied id.
+  app.post("/api/account/delete", async (req, res) => {
+    try {
+      if (!supabaseAdmin) {
+        return res.status(500).json({ success: false, error: "Servicio no disponible." });
+      }
+
+      const authHeader = req.headers.authorization || "";
+      const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+      if (!token) {
+        return res.status(401).json({ success: false, error: "No autenticado." });
+      }
+
+      const { data: userData, error: userErr } = await supabaseAdmin.auth.getUser(token);
+      if (userErr || !userData.user) {
+        return res.status(401).json({ success: false, error: "Sesión inválida." });
+      }
+      const userId = userData.user.id;
+
+      // Cascades to albums/media_items/timeline_events/tributes/family_members/
+      // memorial_events/collaborators for each memorial (see 0002_tables.sql).
+      const { error: memErr } = await supabaseAdmin.from("memorials").delete().eq("owner_id", userId);
+      if (memErr) throw memErr;
+
+      // Remove this user as a collaborator on memorials owned by someone else.
+      await supabaseAdmin.from("collaborators").delete().eq("user_id", userId);
+
+      // Payment records are kept for accounting/tax purposes, just detached
+      // from the now-deleted account (user_id is nullable on this table).
+      await supabaseAdmin.from("payment_transactions").update({ user_id: null }).eq("user_id", userId);
+
+      // Cascades to profiles -> account_entitlements (both "on delete cascade").
+      const { error: delErr } = await supabaseAdmin.auth.admin.deleteUser(userId);
+      if (delErr) throw delErr;
+
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("[Account Delete] Failed:", err);
+      res.status(500).json({ success: false, error: "No se pudo eliminar la cuenta. Contáctanos por soporte." });
+    }
+  });
+
   // Notifica al dueño de un memorial que hay un homenaje pendiente de
   // revisión, con enlaces de un clic para aprobar/rechazar sin necesitar
   // iniciar sesión ni abrir la app — evita que el doliente deba entrar a

@@ -13,6 +13,7 @@ import { AdminPortal } from "./components/admin/AdminPortal";
 import { PrivacyPolicyView } from "./components/static/PrivacyPolicyView";
 import { TermsView } from "./components/static/TermsView";
 import { ContactView } from "./components/static/ContactView";
+import { AccountDeletionView } from "./components/static/AccountDeletionView";
 import { CheckoutModal } from "./components/checkout/CheckoutModal";
 import { ShareModal } from "./components/memorial/ShareModal";
 import { PrintableMemorialModal } from "./components/memorial/PrintableMemorialModal";
@@ -58,6 +59,7 @@ function AppContent() {
         {currentView === "privacy-policy" && <PrivacyPolicyView />}
         {currentView === "terms" && <TermsView />}
         {currentView === "contact" && <ContactView />}
+        {currentView === "account-deletion" && <AccountDeletionView />}
       </main>
 
       {/* Universal Warm Footer */}

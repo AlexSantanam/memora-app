@@ -40,7 +40,8 @@ export type AppView =
   | "admin"
   | "privacy-policy"
   | "terms"
-  | "contact";
+  | "contact"
+  | "account-deletion";
 
 interface ToastNotification {
   id: string;
@@ -94,6 +95,7 @@ interface AppContextType {
   confirmPasswordReset: (newPassword: string) => Promise<{ success: boolean; error?: string }>;
   updateUserProfile: (updates: Partial<User>) => Promise<boolean>;
   changePassword: (oldPassword: string, newPassword: string) => Promise<{ success: boolean; error?: string }>;
+  deleteAccount: () => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   isAuthModalOpen: boolean;
   setIsAuthModalOpen: (open: boolean) => void;
@@ -514,6 +516,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         "/privacy-policy": "privacy-policy",
         "/terms": "terms",
         "/contact": "contact",
+        "/eliminar-cuenta": "account-deletion",
       };
       const staticView = staticPageViews[pathname];
       if (staticView) {
@@ -968,6 +971,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCurrentUser(null);
     setCurrentView("landing");
     notify("info", "Has cerrado sesión", "Esperamos verte pronto en MEMORA.");
+  };
+
+  // Deletes the account server-side (service role key) — this client only
+  // has the anon key, which RLS blocks from deleting other tables' rows or
+  // an auth.users row, so the actual deletion has to happen behind /api/account/delete.
+  const deleteAccount = async (): Promise<{ success: boolean; error?: string }> => {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token;
+    if (!token) return { success: false, error: "No hay sesión activa." };
+
+    try {
+      const res = await fetch("/api/account/delete", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json();
+      if (!json.success) {
+        return { success: false, error: json.error || "No se pudo eliminar la cuenta." };
+      }
+
+      await supabase.auth.signOut();
+      setCurrentUser(null);
+      setMemorials([]);
+      setCurrentView("landing");
+      notify("success", "Cuenta eliminada", "Se han borrado tu cuenta y tus memoriales conforme a tu solicitud.");
+      return { success: true };
+    } catch (e) {
+      console.error("Error deleting account:", e);
+      return { success: false, error: "No se pudo eliminar la cuenta. Intenta nuevamente o contáctanos." };
+    }
   };
 
   // Memorials Navigation
@@ -1912,6 +1945,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         confirmPasswordReset,
         updateUserProfile,
         changePassword,
+        deleteAccount,
         logout,
         isAuthModalOpen,
         setIsAuthModalOpen,
