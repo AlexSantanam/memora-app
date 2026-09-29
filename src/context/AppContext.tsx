@@ -507,6 +507,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       // Check if URL points directly to a memorial slug (e.g. /m/slug or /memorial/slug or ?m=slug)
       const pathname = window.location.pathname;
+
+      // Static pages need a real, directly-loadable URL — Google Play's store
+      // listing links straight to /privacy-policy, bypassing the footer nav.
+      const staticPageViews: Partial<Record<string, AppView>> = {
+        "/privacy-policy": "privacy-policy",
+        "/terms": "terms",
+        "/contact": "contact",
+      };
+      const staticView = staticPageViews[pathname];
+      if (staticView) {
+        setCurrentView(staticView);
+      }
+
       const urlParams = new URLSearchParams(window.location.search);
       const querySlug = urlParams.get("m") || urlParams.get("memorial_slug");
 
