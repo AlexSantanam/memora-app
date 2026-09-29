@@ -134,6 +134,26 @@ export const Footer: React.FC = () => {
                   Memorial de Ejemplo
                 </button>
               </li>
+              <li>
+                <a href="/memorial-digital" className="hover:text-white transition-colors">
+                  Qué es un Memorial Digital
+                </a>
+              </li>
+              <li>
+                <a href="/memorial-mascotas" className="hover:text-white transition-colors">
+                  Memorial para Mascotas
+                </a>
+              </li>
+              <li>
+                <a href="/libro-de-condolencias-digital" className="hover:text-white transition-colors">
+                  Libro de Condolencias Digital
+                </a>
+              </li>
+              <li>
+                <a href="/codigo-qr-memorial" className="hover:text-white transition-colors">
+                  Código QR para Lápida
+                </a>
+              </li>
             </ul>
           </div>
 
