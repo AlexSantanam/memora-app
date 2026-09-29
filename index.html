@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="google-site-verification" content="ls5vO4SlZjPBHrw-CXqXMMtLYB_5t-9NYvxejrbFDG4" />
+    <meta name="author" content="Alexis Santana Miranda — CEO de Estudio UniVerso693" />
     <title>MEMORA — Recuerdos Para Siempre | Memoriales Digitales y Legados de Vida</title>
     <meta name="description" content="Crea un lugar donde su historia pueda permanecer para siempre. Memoriales digitales con fotografías, videos, historias familiares y homenajes." />
     <link rel="canonical" href="https://memora.lat/" />
@@ -28,15 +29,49 @@
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
+        "@type": "Organization",
+        "@id": "https://memora.lat/#organizacion",
+        "name": "MEMORA",
+        "slogan": "Recuerdos para siempre",
+        "url": "https://memora.lat/",
+        "logo": "https://memora.lat/logo-principal.png",
+        "image": "https://memora.lat/logo-principal.png",
+        "email": "contacto@memora.lat",
+        "parentOrganization": {
+          "@type": "Organization",
+          "@id": "https://yndipet.com/#estudio",
+          "name": "Estudio UniVerso693",
+          "alternateName": ["UniVerso693", "Universo693", "Estudio Universo 693", "Estudio UniVerso 693"]
+        },
+        "founder": {
+          "@type": "Person",
+          "@id": "https://yndipet.com/#alexis-santana",
+          "name": "Alexis Santana Miranda",
+          "alternateName": "Alexis Santana",
+          "jobTitle": ["CEO de Estudio UniVerso693", "Desarrollador de software"],
+          "sameAs": ["https://www.linkedin.com/in/alexis-santana-a64ab573"],
+          "worksFor": { "@id": "https://yndipet.com/#estudio" }
+        },
+        "address": { "@type": "PostalAddress", "addressCountry": "CL" },
+        "areaServed": { "@type": "Country", "name": "Chile" },
+        "contactPoint": {
+          "@type": "ContactPoint",
+          "contactType": "customer support",
+          "email": "contacto@memora.lat",
+          "areaServed": "CL",
+          "availableLanguage": "Spanish"
+        }
+      }
+    </script>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
         "@type": "WebSite",
         "name": "MEMORA",
         "url": "https://memora.lat/",
         "description": "Memoriales digitales con fotografías, videos, historias familiares y homenajes.",
-        "publisher": {
-          "@type": "Organization",
-          "name": "Estudio UniVerso 693",
-          "brand": "MEMORA"
-        }
+        "inLanguage": "es-CL",
+        "publisher": { "@id": "https://memora.lat/#organizacion" }
       }
     </script>
   </head>
