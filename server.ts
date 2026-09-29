@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
@@ -1930,9 +1931,65 @@ Genera 3 opciones de mensajes diferentes en formato JSON:
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
+    const indexHtmlPath = path.join(distPath, "index.html");
+
+    const escapeHtml = (s: string) =>
+      s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+    // Link-preview bots (WhatsApp, Facebook, Twitter/X, iMessage, Slack, ...)
+    // fetch the raw HTML and never run the client JS, so the per-memorial
+    // <title>/og:* tags MemorialView.tsx sets at runtime (see that file)
+    // never reach them — every shared memorial would preview as generic
+    // MEMORA branding instead of the person's own name and photo. Rewriting
+    // the static index.html here, server-side, is what actually fixes that;
+    // the client-side version still matters for the tab title/back button.
+    app.get("/m/:slug", async (req, res) => {
+      try {
+        let html = fs.readFileSync(indexHtmlPath, "utf-8");
+        const origin = process.env.APP_URL || "https://memora.lat";
+
+        if (supabaseAdmin) {
+          const { data } = await supabaseAdmin
+            .from("memorials")
+            .select("person_name, preferred_name, summary, main_photo, slug, privacy, status")
+            .eq("slug", req.params.slug)
+            .eq("privacy", "public")
+            .eq("status", "published")
+            .maybeSingle();
+
+          if (data) {
+            const name = escapeHtml(data.preferred_name || data.person_name);
+            const title = `${name} | MEMORA — Recuerdos Para Siempre`;
+            const description = escapeHtml(
+              data.summary || `Memorial digital de ${name}. Comparte recuerdos, fotos y homenajes.`
+            );
+            const url = `${origin}/m/${data.slug}`;
+            const image = data.main_photo ? escapeHtml(data.main_photo) : `${origin}/logo-principal.png`;
+
+            html = html
+              .replace(/<title>.*?<\/title>/, `<title>${title}</title>`)
+              .replace(/(<meta name="description" content=")[^"]*(")/, `$1${description}$2`)
+              .replace(/(<link rel="canonical" href=")[^"]*(")/, `$1${url}$2`)
+              .replace(/(<meta property="og:title" content=")[^"]*(")/, `$1${title}$2`)
+              .replace(/(<meta property="og:description" content=")[^"]*(")/, `$1${description}$2`)
+              .replace(/(<meta property="og:url" content=")[^"]*(")/, `$1${url}$2`)
+              .replace(/(<meta property="og:image" content=")[^"]*(")/, `$1${image}$2`)
+              .replace(/(<meta name="twitter:title" content=")[^"]*(")/, `$1${title}$2`)
+              .replace(/(<meta name="twitter:description" content=")[^"]*(")/, `$1${description}$2`)
+              .replace(/(<meta name="twitter:image" content=")[^"]*(")/, `$1${image}$2`);
+          }
+        }
+
+        res.send(html);
+      } catch (err) {
+        console.error("[Memorial SSR meta] Failed, falling back to static index.html:", err);
+        res.sendFile(indexHtmlPath);
+      }
+    });
+
     app.use(express.static(distPath));
     app.get("*", (_req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
+      res.sendFile(indexHtmlPath);
     });
   }
 
