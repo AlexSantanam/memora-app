@@ -320,7 +320,13 @@ async function startServer() {
   // only by direct link, never discoverable via search).
   app.get("/sitemap.xml", async (_req, res) => {
     const origin = process.env.APP_URL || "https://memora.lat";
-    const staticUrls = [`${origin}/`, `${origin}/codigo-qr-memorial`];
+    const staticUrls = [
+      `${origin}/`,
+      `${origin}/codigo-qr-memorial`,
+      `${origin}/memorial-digital`,
+      `${origin}/memorial-mascotas`,
+      `${origin}/libro-de-condolencias-digital`,
+    ];
 
     let memorialUrls: string[] = [];
     if (supabaseAdmin) {
@@ -1833,26 +1839,34 @@ Genera 3 opciones de mensajes diferentes en formato JSON:
     res.send(renderPage(title, message, true).replace('href="https://memora.lat"', `href="${memorialUrl}"`));
   });
 
-  // SEO landing page targeting "código QR para lápida/memorial" searches —
-  // a static, JS-free HTML response (not the SPA) so search engines index
-  // the real content immediately without needing to execute React. Every
-  // claim here matches an actually-shipped feature (QR code generation,
-  // included free on every plan, printable, privacy controls) — nothing
-  // here should ever say something the product doesn't really do.
-  app.get("/codigo-qr-memorial", (_req, res) => {
-    res.header("Content-Type", "text/html; charset=utf-8");
-    res.send(`<!doctype html>
+  // SEO landing pages — static, JS-free HTML (not the SPA) so search
+  // engines index the real content immediately without executing React.
+  // Every claim across these pages must match an actually-shipped feature
+  // (QR generation, pet memorials, tribute wall, privacy controls, pricing)
+  // — nothing here should ever say something the product doesn't really do.
+  const renderSeoPage = (opts: {
+    path: string;
+    title: string;
+    description: string;
+    ogTitle?: string;
+    ogDescription?: string;
+    eyebrow: string;
+    h1: string;
+    lede: string;
+    sections: string; // raw <section> HTML
+    ctaText?: string;
+  }) => `<!doctype html>
 <html lang="es">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Código QR para Memorial Digital y Lápida | MEMORA Chile</title>
-<meta name="description" content="Crea un código QR permanente para lápidas, nichos y recordatorios funerarios en Chile. Al escanearlo, familiares y amigos acceden al memorial digital: fotos, videos, biografía y homenajes. Incluido gratis en todos los planes de MEMORA." />
-<link rel="canonical" href="https://memora.lat/codigo-qr-memorial" />
-<meta property="og:title" content="Código QR para Memorial Digital y Lápida | MEMORA" />
-<meta property="og:description" content="Un código QR que lleva directo al memorial digital de tu ser querido. Incluido gratis en todos los planes." />
+<title>${opts.title}</title>
+<meta name="description" content="${opts.description}" />
+<link rel="canonical" href="https://memora.lat${opts.path}" />
+<meta property="og:title" content="${opts.ogTitle || opts.title}" />
+<meta property="og:description" content="${opts.ogDescription || opts.description}" />
 <meta property="og:type" content="website" />
-<meta property="og:url" content="https://memora.lat/codigo-qr-memorial" />
+<meta property="og:url" content="https://memora.lat${opts.path}" />
 <meta property="og:image" content="https://memora.lat/logo-principal.png" />
 <link rel="icon" type="image/png" href="/favicon.png" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -1885,11 +1899,38 @@ Genera 3 opciones de mensajes diferentes en formato JSON:
 
 <div class="wrap">
   <div class="hero">
-    <span class="eyebrow">Código QR para Memoriales</span>
-    <h1>Un código QR que lleva directo a su memoria — para siempre.</h1>
-    <p class="lede">En MEMORA, cada memorial genera automáticamente un código QR de alta resolución, listo para imprimir en una placa, recordatorio funerario o libro de firmas. Cualquier persona lo escanea con la cámara de su teléfono y entra directo a las fotos, la biografía y los homenajes — sin instalar ninguna aplicación.</p>
+    <span class="eyebrow">${opts.eyebrow}</span>
+    <h1>${opts.h1}</h1>
+    <p class="lede">${opts.lede}</p>
   </div>
 
+  ${opts.sections}
+
+  <div class="cta">
+    <a class="btn" href="/">${opts.ctaText || "Crear mi memorial en MEMORA"}</a>
+  </div>
+</div>
+
+<footer>
+  <div class="wrap">© ${new Date().getFullYear()} MEMORA. <a href="/">memora.lat</a></div>
+</footer>
+</body>
+</html>`;
+
+  app.get("/codigo-qr-memorial", (_req, res) => {
+    res.header("Content-Type", "text/html; charset=utf-8");
+    res.send(
+      renderSeoPage({
+        path: "/codigo-qr-memorial",
+        title: "Código QR para Memorial Digital y Lápida | MEMORA Chile",
+        description:
+          "Crea un código QR permanente para lápidas, nichos y recordatorios funerarios en Chile. Al escanearlo, familiares y amigos acceden al memorial digital: fotos, videos, biografía y homenajes. Incluido gratis en todos los planes de MEMORA.",
+        ogTitle: "Código QR para Memorial Digital y Lápida | MEMORA",
+        ogDescription: "Un código QR que lleva directo al memorial digital de tu ser querido. Incluido gratis en todos los planes.",
+        eyebrow: "Código QR para Memoriales",
+        h1: "Un código QR que lleva directo a su memoria — para siempre.",
+        lede: "En MEMORA, cada memorial genera automáticamente un código QR de alta resolución, listo para imprimir en una placa, recordatorio funerario o libro de firmas. Cualquier persona lo escanea con la cámara de su teléfono y entra directo a las fotos, la biografía y los homenajes — sin instalar ninguna aplicación.",
+        sections: `
   <section>
     <h2>¿Cómo funciona?</h2>
     <ul>
@@ -1908,18 +1949,112 @@ Genera 3 opciones de mensajes diferentes en formato JSON:
   <section>
     <h2>Privacidad bajo tu control</h2>
     <p>Tú decides quién puede ver el memorial al que apunta el código: público para cualquiera, protegido con contraseña, solo por invitación, u oculto (no aparece en buscadores, solo accesible con el link o el QR).</p>
+  </section>`,
+      })
+    );
+  });
+
+  app.get("/memorial-digital", (_req, res) => {
+    res.header("Content-Type", "text/html; charset=utf-8");
+    res.send(
+      renderSeoPage({
+        path: "/memorial-digital",
+        title: "Memorial Digital Online — Crea uno desde $990 CLP | MEMORA",
+        description:
+          "Crea un memorial digital para un ser querido en minutos: fotos, biografía, línea de tiempo y homenajes de familiares y amigos. Sin publicidad, con control total de privacidad, desde $990 CLP al año.",
+        ogTitle: "Memorial Digital Online | MEMORA",
+        ogDescription: "Crea un espacio digital permanente para honrar y recordar a quien amas — fotos, biografía, homenajes y más.",
+        eyebrow: "Memorial Digital",
+        h1: "Un memorial digital para recordar, no solo para despedir.",
+        lede: "MEMORA es un espacio digital íntimo donde una familia reúne fotos, videos, la biografía completa y los homenajes de quienes conocieron a esa persona — accesible para siempre desde cualquier lugar, en vez de quedar solo en la memoria de quienes estuvieron en el funeral.",
+        sections: `
+  <section>
+    <h2>Qué incluye un memorial en MEMORA</h2>
+    <ul>
+      <li>Biografía completa, con un asistente que ayuda a redactarla a partir de notas sueltas y recuerdos.</li>
+      <li>Fotos y, en los planes Familia y Legado, videos subidos directamente (no solo enlaces de YouTube).</li>
+      <li>Línea de tiempo con los momentos y etapas importantes de su vida.</li>
+      <li>Árbol familiar, para dejar registrada la genealogía y las relaciones.</li>
+      <li>Muro de homenajes donde familiares y amigos dejan condolencias, encienden una vela o dejan flores.</li>
+      <li>Código QR incluido, listo para imprimir en una placa, lápida o recordatorio.</li>
+    </ul>
   </section>
 
-  <div class="cta">
-    <a class="btn" href="/">Crear mi memorial en MEMORA</a>
-  </div>
-</div>
+  <section>
+    <h2>Precio y planes</h2>
+    <p>Los planes parten desde $990 CLP al año (Esencial), con opciones Familia y Legado que suman más espacio de fotos y video, más colaboradores y carga de videos propios. Sin publicidad en ningún plan.</p>
+  </section>
 
-<footer>
-  <div class="wrap">© ${new Date().getFullYear()} MEMORA. <a href="/">memora.lat</a></div>
-</footer>
-</body>
-</html>`);
+  <section>
+    <h2>Tú decides quién lo ve</h2>
+    <p>Cada memorial puede ser público (cualquiera con el enlace), protegido con contraseña, solo por invitación, u oculto (no aparece en buscadores, solo accesible con el link directo o el código QR).</p>
+  </section>`,
+      })
+    );
+  });
+
+  app.get("/memorial-mascotas", (_req, res) => {
+    res.header("Content-Type", "text/html; charset=utf-8");
+    res.send(
+      renderSeoPage({
+        path: "/memorial-mascotas",
+        title: "Memorial Digital para Mascotas Fallecidas | MEMORA",
+        description:
+          "Crea un memorial digital para tu mascota: fotos, su historia, su rincón favorito, anécdotas y un espacio para recibir el cariño de otros que la conocieron. Desde $990 CLP al año.",
+        ogTitle: "Memorial Digital para Mascotas | MEMORA",
+        ogDescription: "Un espacio para recordar a tu mascota: fotos, su historia y homenajes de quienes la quisieron.",
+        eyebrow: "MEMORA Mascotas",
+        h1: "También fueron familia. También merecen ser recordados.",
+        lede: "MEMORA Mascotas es un memorial digital pensado para perros, gatos y cualquier compañero de vida: su raza, su personalidad, su rincón favorito, la anécdota que nadie olvida — un lugar propio para recordarlo, no una sección genérica dentro de otra cosa.",
+        sections: `
+  <section>
+    <h2>Hecho para contar su historia, no solo mostrar una foto</h2>
+    <ul>
+      <li>Ficha con especie, raza y personalidad.</li>
+      <li>Su rincón favorito, su pasión, la historia de cómo llegó a la familia.</li>
+      <li>Anécdotas y una frase que lo describa.</li>
+      <li>Fotos y videos, con espacio para que otros dejen homenajes y enciendan una vela.</li>
+      <li>Código QR incluido — para imprimir en un recordatorio o dejar en su lugar de descanso.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>El mismo cuidado y privacidad que un memorial de persona</h2>
+    <p>Puedes dejarlo público para que cualquiera que la haya conocido pueda visitarlo, o restringirlo a la familia — la misma flexibilidad de privacidad que el resto de MEMORA.</p>
+  </section>`,
+      })
+    );
+  });
+
+  app.get("/libro-de-condolencias-digital", (_req, res) => {
+    res.header("Content-Type", "text/html; charset=utf-8");
+    res.send(
+      renderSeoPage({
+        path: "/libro-de-condolencias-digital",
+        title: "Libro de Condolencias Digital | MEMORA",
+        description:
+          "Reemplaza o complementa el libro de firmas del funeral con un muro de condolencias digital: familiares y amigos dejan mensajes, encienden una vela o dejan flores, y todo queda guardado para siempre junto al memorial.",
+        ogTitle: "Libro de Condolencias Digital | MEMORA",
+        ogDescription: "Un muro de condolencias digital que no se pierde ni se queda en la funeraria — queda guardado para siempre.",
+        eyebrow: "Libro de Condolencias Digital",
+        h1: "El libro de firmas que no se queda en una caja después del funeral.",
+        lede: "El muro de homenajes de MEMORA cumple la misma función que el libro de condolencias físico — recibir las palabras de quienes acompañan a la familia — pero queda accesible para siempre, se puede leer desde cualquier lugar, y sigue creciendo mucho después de que termina el funeral.",
+        sections: `
+  <section>
+    <h2>Cómo funciona</h2>
+    <ul>
+      <li>Cualquier persona con acceso al memorial puede dejar un mensaje de condolencia, encender una vela o dejar flores.</li>
+      <li>El dueño del memorial puede revisar y aprobar cada mensaje antes de que se publique, y recibe una notificación por correo cuando llega uno nuevo.</li>
+      <li>A diferencia de un libro físico, no tiene límite de páginas ni se puede perder — y se puede leer desde el teléfono en cualquier momento, no solo el día del funeral.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Incluido en todos los planes</h2>
+    <p>El muro de condolencias viene incluido en cualquier memorial de MEMORA, junto con el resto de las funciones — biografía, fotos, línea de tiempo y código QR — desde $990 CLP al año.</p>
+  </section>`,
+      })
+    );
   });
 
   // Vite middleware for dev / static files for prod
