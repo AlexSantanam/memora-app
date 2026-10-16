@@ -39,6 +39,7 @@ export const MemorialWizard: React.FC = () => {
     userUsage,
     setSelectedPlanForCheckout,
     goToPlanSelection,
+    isYndiPartner,
   } = useApp();
 
   // Step 0: Type Selection ("¿A quién quieres recordar?")
@@ -63,8 +64,13 @@ export const MemorialWizard: React.FC = () => {
   const mainPhotoInputRef = useRef<HTMLInputElement>(null);
   const coverPhotoInputRef = useRef<HTMLInputElement>(null);
 
-  // Memorial Type Choice
-  const [memorialType, setMemorialType] = useState<MemorialType>("person");
+  // Memorial Type Choice — Default to "pet" if coming from YndiPet
+  const [memorialType, setMemorialType] = useState<MemorialType>(() => {
+    if (typeof window !== "undefined" && localStorage.getItem("memora_partner") === "yndipet") {
+      return "pet";
+    }
+    return "person";
+  });
 
   // Form State
   const [formData, setFormData] = useState<{
@@ -1432,7 +1438,13 @@ export const MemorialWizard: React.FC = () => {
                     id="wizard-pay-to-publish-btn"
                   >
                     <Lock className="w-4 h-4 text-[#C5A880]" />
-                    <span>{!userUsage.isPaid ? "Elegir plan para publicar" : "Mejorar plan para publicar"}</span>
+                    <span>
+                      {!userUsage.isPaid
+                        ? isYndiPartner
+                          ? "🐾 Activar 1 Año Bonificado YndiPet ($0 CLP)"
+                          : "Elegir plan para publicar"
+                        : "Mejorar plan para publicar"}
+                    </span>
                   </button>
                 )}
               </div>

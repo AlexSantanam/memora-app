@@ -14,6 +14,7 @@ import {
   Smartphone,
   Wallet,
   Globe2,
+  Sparkles,
 } from "lucide-react";
 import confetti from "canvas-confetti";
 import { WhatsAppButton } from "../whatsapp/WhatsAppButton";
@@ -31,11 +32,14 @@ interface CheckoutModalProps {
 const FLOW_ENABLED = false;
 
 export const CheckoutModal: React.FC<CheckoutModalProps> = ({ planId, memorialId, onClose }) => {
-  const { completePaymentSimulation, notify, currentUser } = useApp();
+  const { completePaymentSimulation, notify, currentUser, isYndiPartner, activateYndiPetBenefit } = useApp();
 
   const [paymentGateway, setPaymentGateway] = useState<"flow" | "mercadopago" | "paypal">(
     FLOW_ENABLED ? "flow" : "mercadopago"
   );
+
+  // YndiPet Partner State
+  const [isYndiLoading, setIsYndiLoading] = useState(false);
 
   // Flow State
   const [isFlowLoading, setIsFlowLoading] = useState(false);
@@ -61,6 +65,25 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ planId, memorialId
   };
 
   const amountCLP = planPricesCLP[planId] ?? (plan.price || 4900);
+
+  // Handle YndiPet Partner Benefit Activation (1 Year Free / $0 CLP)
+  const handleYndiActivation = async () => {
+    setIsYndiLoading(true);
+    try {
+      const ok = await activateYndiPetBenefit(planId, memorialId);
+      if (ok) {
+        setIsDone(true);
+        confetti({
+          particleCount: 100,
+          spread: 70,
+          origin: { y: 0.6 },
+          colors: ["#F59E0B", "#D97706", "#C5A880", "#10B981"],
+        });
+      }
+    } finally {
+      setIsYndiLoading(false);
+    }
+  };
 
   // Handle Flow Real Checkout
   const handleFlowPayment = async () => {
@@ -236,31 +259,109 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ planId, memorialId
             <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
               <CheckCircle2 className="w-10 h-10" />
             </div>
+            {isYndiPartner && (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                🐾 Convenio Oficial YndiPet Premium
+              </span>
+            )}
             <h3 className="font-serif text-2xl text-[#24201D] font-medium">
-              ¡Gracias por confiar en MEMORA!
+              {isYndiPartner ? "¡1 Año Bonificado Activado con Éxito!" : "¡Gracias por confiar en MEMORA!"}
             </h3>
             <p className="text-xs sm:text-sm text-[#5C534B] max-w-sm mx-auto">
-              Tu plan <strong>{plan.name}</strong> ha sido activado con éxito. Su historia y recuerdos permanecerán protegidos para siempre.
+              {isYndiPartner
+                ? `Tu memorial bajo el plan ${plan.name} ha sido activado por 1 año completo ($0 CLP). Sus recuerdos estarán protegidos y disponibles sin costo adicional mientras mantengas tu suscripción en YndiPet.`
+                : `Tu plan ${plan.name} ha sido activado con éxito. Su historia y recuerdos permanecerán protegidos para siempre.`}
             </p>
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-6 py-2.5 rounded-full bg-[#24201D] text-white hover:bg-[#3D3530] text-xs font-semibold transition-all cursor-pointer"
+            >
+              Comenzar a usar MEMORA
+            </button>
           </div>
         ) : (
           <div className="space-y-5">
             {/* Header */}
             <div>
-              <span className="text-[11px] font-bold uppercase tracking-widest text-[#7A4E38] block mb-1">
-                Activación de Plan
-              </span>
-              <div className="flex items-baseline justify-between">
-                <h3 className="font-serif text-2xl text-[#24201D] font-medium">{plan.name}</h3>
-                <div className="text-right">
-                  <span className="font-serif text-2xl font-bold text-[#24201D] block">
-                    ${amountCLP.toLocaleString("es-CL")} CLP
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[11px] font-bold uppercase tracking-widest text-[#7A4E38] block">
+                  Activación de Plan
+                </span>
+                {isYndiPartner && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                    🐾 Convenio YndiPet
                   </span>
-                  <span className="text-[11px] text-[#7A4E38] font-medium">/ año (renovación: ${amountCLP.toLocaleString("es-CL")})</span>
+                )}
+              </div>
+              <div className="flex items-baseline justify-between">
+                <div>
+                  <h3 className="font-serif text-2xl text-[#24201D] font-medium">{plan.name}</h3>
+                  {isYndiPartner && (
+                    <span className="text-xs font-semibold text-emerald-700 block mt-0.5">
+                      1 Año Bonificado ($0 CLP, Renovable)
+                    </span>
+                  )}
+                </div>
+                <div className="text-right">
+                  <span className={`font-serif text-2xl font-bold block ${isYndiPartner ? "text-emerald-700" : "text-[#24201D]"}`}>
+                    {isYndiPartner ? "$0 CLP" : `$${amountCLP.toLocaleString("es-CL")} CLP`}
+                  </span>
+                  <span className="text-[11px] text-[#7A4E38] font-medium block">
+                    {isYndiPartner ? (
+                      <span className="line-through text-stone-400">Normal: ${amountCLP.toLocaleString("es-CL")} CLP / año</span>
+                    ) : (
+                      `/ año (renovación: $${amountCLP.toLocaleString("es-CL")})`
+                    )}
+                  </span>
                 </div>
               </div>
-              <p className="text-xs text-[#8C827A] mt-1">{plan.billingText}</p>
+              <p className="text-xs text-[#8C827A] mt-1">
+                {isYndiPartner
+                  ? "Beneficio exclusivo incluido en tu membresía de YndiPet. Cobertura anual renovable mientras mantengas tu suscripción."
+                  : plan.billingText}
+              </p>
             </div>
+
+            {/* YndiPet Premium Partner 1-Click Activation Card */}
+            {isYndiPartner && (
+              <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-50 via-orange-50 to-stone-50 border-2 border-amber-300 space-y-3 animate-in fade-in duration-200 shadow-xs">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">✨</span>
+                    <div>
+                      <h4 className="text-sm font-bold text-[#24201D]">Beneficio YndiPet Premium</h4>
+                      <p className="text-[11px] text-[#7A4E38]">1 año completo de memorial digital para tu mascota</p>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-600 text-white">
+                    $0 CLP
+                  </span>
+                </div>
+                <p className="text-xs text-[#5C534B] leading-relaxed">
+                  Presiona el botón a continuación para activar tu memorial sin costo adicional. Incluye libro de condolencias, código QR y espacio protegido en la nube.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleYndiActivation}
+                  disabled={isYndiLoading}
+                  className="w-full py-3.5 rounded-full bg-gradient-to-r from-amber-600 via-amber-700 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white text-sm font-bold flex items-center justify-center gap-2 shadow-md active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50"
+                  id="checkout-yndipet-activate-btn"
+                >
+                  {isYndiLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-white" />
+                      <span>Activando tu año bonificado...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4 text-amber-200" />
+                      <span>Activar mi Año Bonificado en MEMORA ($0 CLP)</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
 
             {/* Plan Highlights */}
             <div className="p-3.5 rounded-2xl bg-[#FAF7F2] border border-[#EAE3D9] space-y-1.5 text-xs text-[#5C534B]">

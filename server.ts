@@ -1463,6 +1463,67 @@ Genera 3 opciones de mensajes diferentes en formato JSON:
     });
   });
 
+  // YndiPet Partner Integration — 1 Year Free Memorial ($0 CLP, Renewable with YndiPet subscription)
+  app.post("/api/partners/yndipet/activate", async (req, res) => {
+    try {
+      const { userId, userEmail, planId, memorialId } = req.body;
+      const targetPlan = planId || "familia";
+      // 1 full year (365 days) subscription renewal period
+      const nextRenewalDate = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
+
+      if (supabaseAdmin && userId) {
+        // Update account entitlements to active for 1 year with $0 CLP (bonificado)
+        const { error: entError } = await supabaseAdmin
+          .from("account_entitlements")
+          .update({
+            current_plan: targetPlan,
+            subscription_status: "active",
+            subscription_start_date: new Date().toISOString(),
+            next_renewal_date: nextRenewalDate,
+            price_clp: 0,
+          })
+          .eq("user_id", userId);
+
+        if (entError) {
+          console.error("[YndiPet Partner] Error updating account_entitlements:", entError.message);
+        }
+
+        // If memorialId was supplied, link the plan to this memorial
+        if (memorialId) {
+          await supabaseAdmin
+            .from("memorials")
+            .update({ plan_id: targetPlan })
+            .eq("id", memorialId)
+            .eq("owner_id", userId);
+        }
+
+        // Register transaction record
+        await supabaseAdmin.from("payment_transactions").insert({
+          user_id: userId,
+          memorial_id: memorialId || null,
+          plan_id: targetPlan,
+          amount: 0,
+          currency: "CLP",
+          provider: "yndipet_partner",
+          invoice_number: `INV-YNDI-${Math.floor(100000 + Math.random() * 900000)}`,
+          status: "completed",
+          created_at: new Date().toISOString(),
+        });
+      }
+
+      res.json({
+        success: true,
+        planId: targetPlan,
+        status: "active",
+        nextRenewalDate,
+        message: "Convenio YndiPet Premium activado con éxito: 1 año bonificado ($0 CLP, renovable).",
+      });
+    } catch (err: any) {
+      console.error("Error in /api/partners/yndipet/activate:", err);
+      res.status(500).json({ success: false, error: err?.message || "Error al procesar convenio YndiPet." });
+    }
+  });
+
   // Contact form — the form previously only showed a fake "sent" toast with
   // no actual delivery anywhere. Sends to contacto@memora.lat via Resend
   // (same service already used for payment receipts), with reply-to set to

@@ -32,13 +32,18 @@ export const AuthModal: React.FC = () => {
     googleLogin,
     requestPasswordReset,
     confirmPasswordReset,
+    isYndiPartner,
   } = useApp();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Form states
   const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(() => {
+    if (typeof window === "undefined") return "";
+    const pUser = localStorage.getItem("memora_partner_user") || "";
+    return pUser.includes("@") ? pUser : "";
+  });
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [selectedAvatar, setSelectedAvatar] = useState("");
@@ -206,6 +211,19 @@ export const AuthModal: React.FC = () => {
               <div className="mb-4 p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 flex items-start gap-2.5 animate-in fade-in">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
                 <span className="leading-snug">{successMessage}</span>
+              </div>
+            )}
+
+            {/* YndiPet Partner Info Banner */}
+            {isYndiPartner && (
+              <div className="mb-4 p-3 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex items-start gap-2.5 animate-in fade-in">
+                <span className="text-base flex-shrink-0">🐾</span>
+                <div>
+                  <span className="font-bold block">Convenio Oficial YndiPet Premium</span>
+                  <span className="text-[11px] text-amber-800 leading-snug">
+                    Ingresa o crea tu cuenta para activar tu <strong>año bonificado ($0 CLP)</strong> de MEMORA Mascotas.
+                  </span>
+                </div>
               </div>
             )}
 

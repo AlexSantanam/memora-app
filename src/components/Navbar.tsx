@@ -25,6 +25,7 @@ export const Navbar: React.FC = () => {
     logout,
     openMemorialBySlug,
     openMyProfile,
+    isYndiPartner,
   } = useApp();
 
   const [isScrolled, setIsScrolled] = useState(false);
@@ -66,13 +67,40 @@ export const Navbar: React.FC = () => {
   };
 
   return (
-    <header
-      className={`sticky top-0 z-40 transition-all duration-300 ${
-        isScrolled
-          ? "bg-[#FAF7F2]/95 backdrop-blur-md shadow-sm border-b border-[#EAE3D9]/80 py-2 sm:py-2.5"
-          : "bg-[#FAF7F2] border-b border-[#EAE3D9]/40 py-2.5 sm:py-3.5"
-      }`}
-    >
+    <>
+      {isYndiPartner && (
+        <div className="bg-gradient-to-r from-amber-700 via-amber-800 to-orange-700 text-white text-xs py-2 px-4 shadow-sm relative z-50">
+          <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 font-medium">
+              <span className="text-sm">🐾</span>
+              <span>
+                <strong>Convenio Oficial YndiPet Premium:</strong> Tienes <strong>1 año bonificado ($0 CLP)</strong> de MEMORA Mascotas incluido.
+              </span>
+            </div>
+            <button
+              onClick={() => {
+                if (!currentUser) {
+                  setIsAuthModalOpen(true);
+                  setAuthModalMode("register");
+                } else {
+                  setCurrentView("wizard");
+                }
+              }}
+              className="px-3.5 py-1 rounded-full bg-white/20 hover:bg-white/30 text-white text-[11px] font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-1 shadow-xs"
+            >
+              <span>{currentUser ? "Crear Memorial Mascota" : "Activar mi Año Gratis"}</span>
+              <span>→</span>
+            </button>
+          </div>
+        </div>
+      )}
+      <header
+        className={`sticky top-0 z-40 transition-all duration-300 ${
+          isScrolled
+            ? "bg-[#FAF7F2]/95 backdrop-blur-md shadow-sm border-b border-[#EAE3D9]/80 py-2 sm:py-2.5"
+            : "bg-[#FAF7F2] border-b border-[#EAE3D9]/40 py-2.5 sm:py-3.5"
+        }`}
+      >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between">
         {/* Brand Logo */}
         <button
@@ -377,5 +405,6 @@ export const Navbar: React.FC = () => {
         </div>
       )}
     </header>
+    </>
   );
 };

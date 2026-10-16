@@ -145,6 +145,8 @@ interface AppContextType {
   setTargetMemorialForCheckout: (id: string | null) => void;
   transactions: PaymentTransaction[];
   completePaymentSimulation: (planId: PlanTier, memorialId?: string) => Promise<PaymentTransaction>;
+  isYndiPartner: boolean;
+  activateYndiPetBenefit: (planId?: PlanTier, memorialId?: string) => Promise<boolean>;
 
   // AI Story Assistant
   generateStoryWithAI: (params: {
@@ -427,6 +429,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [selectedPlanForCheckout, setSelectedPlanForCheckout] = useState<PlanTier | null>(null);
   const [targetMemorialForCheckout, setTargetMemorialForCheckout] = useState<string | null>(null);
 
+  // YndiPet Partnership State (1 Year Free Memorial, Renewable)
+  const [isYndiPartner, setIsYndiPartner] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    const urlParams = new URLSearchParams(window.location.search);
+    const partner = urlParams.get("partner");
+    const ref = urlParams.get("ref");
+    return (
+      partner === "yndipet" ||
+      (ref ? ref.startsWith("yndipet") : false) ||
+      localStorage.getItem("memora_partner") === "yndipet"
+    );
+  });
+
   // Toast Notifications
   const [notifications, setNotifications] = useState<ToastNotification[]>([]);
 
@@ -525,6 +540,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       const urlParams = new URLSearchParams(window.location.search);
       const querySlug = urlParams.get("m") || urlParams.get("memorial_slug");
+
+      // YndiPet Partner Detection (?partner=yndipet or ?ref=yndipet_premium)
+      const partnerParam = urlParams.get("partner");
+      const refParam = urlParams.get("ref");
+      const userParam = urlParams.get("user");
+      const tierParam = urlParams.get("tier");
+
+      if (partnerParam === "yndipet" || (refParam ? refParam.startsWith("yndipet") : false)) {
+        try {
+          localStorage.setItem("memora_partner", "yndipet");
+          if (tierParam || refParam === "yndipet_premium") {
+            localStorage.setItem("memora_partner_tier", "premium");
+          }
+          if (userParam) {
+            localStorage.setItem("memora_partner_user", userParam);
+          }
+          setIsYndiPartner(true);
+        } catch {}
+      }
 
       let targetSlug = querySlug;
       if (!targetSlug && (pathname.startsWith("/m/") || pathname.startsWith("/memorial/"))) {
@@ -1837,6 +1871,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   ): Promise<PaymentTransaction> => {
     const normalizedPlan = normalizePlanId(planId);
     const planConfig = getPlanConfig(normalizedPlan);
+    const isYndi = isYndiPartner;
+    const finalAmount = isYndi ? 0 : planConfig.priceMonthlyCLP;
+    const finalProvider = isYndi ? "yndipet_partner" : "flow_webpay";
 
     const newTx: PaymentTransaction = {
       id: `tx-${Date.now()}`,
@@ -1844,26 +1881,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       memorialId: memorialId,
       memorialName: memorialId ? memorials.find((m) => m.id === memorialId)?.personName : undefined,
       planId: normalizedPlan,
-      amount: planConfig.priceMonthlyCLP,
+      amount: finalAmount,
       currency: "CLP",
       status: "completed",
-      provider: "flow_webpay",
-      invoiceNumber: `INV-MEM-${Math.floor(100000 + Math.random() * 900000)}`,
+      provider: finalProvider,
+      invoiceNumber: `INV-${isYndi ? "YNDI" : "MEM"}-${Math.floor(100000 + Math.random() * 900000)}`,
       createdAt: new Date().toISOString(),
     };
 
     setTransactions((prev) => [newTx, ...prev]);
 
+    // 1 Full year duration (365 days, renewable)
     const newSub: UserSubscription = {
       planId: normalizedPlan,
       status: "active",
       startDate: new Date().toISOString(),
       nextRenewalDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
-      priceCLP: planConfig.priceMonthlyCLP,
+      priceCLP: finalAmount,
     };
 
-    // TODO(Fase 5): igual que el retorno de Flow — activación local únicamente
-    // hasta que exista una escritura server-side autoritativa para este flujo.
     if (currentUser) {
       const updatedUser: User = {
         ...currentUser,
@@ -1879,8 +1915,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     notify(
       "success",
-      "¡Plan actualizado con éxito!",
-      `Tu cuenta ahora cuenta con los beneficios de ${planConfig.name}. Capacidad de ${planConfig.maxMemoras} MEMORAs y hasta ${planConfig.maxPhotosTotal} fotografías.`
+      isYndi ? "¡Convenio YndiPet Activado!" : "¡Plan actualizado con éxito!",
+      isYndi
+        ? `Tu cuenta ahora cuenta con 1 año bonificado ($0 CLP) bajo ${planConfig.name}. Renovable mientras mantengas tu suscripción en YndiPet.`
+        : `Tu cuenta ahora cuenta con los beneficios de ${planConfig.name}. Capacidad de ${planConfig.maxMemoras} MEMORAs y hasta ${planConfig.maxPhotosTotal} fotografías.`
     );
 
     if (currentUser?.email) {
@@ -1891,14 +1929,45 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           userEmail: currentUser.email,
           userName: currentUser.name,
           planName: planConfig.name,
-          amountCLP: planConfig.priceMonthlyCLP,
+          amountCLP: finalAmount,
           invoiceNumber: newTx.invoiceNumber,
-          paymentMethod: "Tarjeta Internacional",
+          paymentMethod: isYndi ? "Convenio Oficial YndiPet" : "Tarjeta Internacional",
         }),
       }).catch((e) => console.warn("No se pudo enviar el comprobante por correo:", e));
     }
 
     return newTx;
+  };
+
+  // Explicit YndiPet Benefit Activator (Calls backend to persist entitlements & sets 1 year active)
+  const activateYndiPetBenefit = async (
+    planId: PlanTier = "familia",
+    memorialId?: string
+  ): Promise<boolean> => {
+    try {
+      const normalizedPlan = normalizePlanId(planId || "familia");
+
+      // Notify backend if user is authenticated to update account_entitlements
+      if (currentUser?.id) {
+        await fetch("/api/partners/yndipet/activate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: currentUser.id,
+            userEmail: currentUser.email,
+            planId: normalizedPlan,
+            memorialId: memorialId || undefined,
+          }),
+        }).catch((err) => console.warn("Server partner activation warning:", err));
+      }
+
+      await completePaymentSimulation(normalizedPlan, memorialId);
+      return true;
+    } catch (err) {
+      console.error("Error activating YndiPet benefit:", err);
+      notify("error", "Error al activar beneficio", "Intenta nuevamente o contáctanos por WhatsApp.");
+      return false;
+    }
   };
 
   // Computed Platform Metrics
@@ -1991,6 +2060,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setTargetMemorialForCheckout,
         transactions,
         completePaymentSimulation,
+        isYndiPartner,
+        activateYndiPetBenefit,
 
         generateStoryWithAI,
 
