@@ -490,18 +490,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setCurrentUser(user);
 
       if (event === "SIGNED_IN") {
-        // Restore whatever screen/plan the user was on before a Google
-        // redirect took them away from the app (stashed in googleLogin()).
-        try {
-          const stashed = sessionStorage.getItem(OAUTH_STASH_KEY);
-          if (stashed) {
-            sessionStorage.removeItem(OAUTH_STASH_KEY);
-            const { view, plan, memorialId } = JSON.parse(stashed);
-            if (view) setCurrentView(view);
-            if (plan) setSelectedPlanForCheckout(plan);
-            if (memorialId) setTargetMemorialForCheckout(memorialId);
-          }
-        } catch {}
+        const isPartner = localStorage.getItem("memora_partner") === "yndipet";
+        if (isPartner && user) {
+          activateYndiPetBenefit("familia");
+          notify(
+            "success",
+            "¡Convenio YndiPet Premium Activado!",
+            `Bienvenido ${user.name}. Tu cuenta tiene 1 año bonificado ($0 CLP) bajo el plan Familia.`
+          );
+          setCurrentView("wizard");
+        } else {
+          // Restore whatever screen/plan the user was on before a Google
+          // redirect took them away from the app (stashed in googleLogin()).
+          try {
+            const stashed = sessionStorage.getItem(OAUTH_STASH_KEY);
+            if (stashed) {
+              sessionStorage.removeItem(OAUTH_STASH_KEY);
+              const { view, plan, memorialId } = JSON.parse(stashed);
+              if (view) setCurrentView(view);
+              if (plan) setSelectedPlanForCheckout(plan);
+              if (memorialId) setTargetMemorialForCheckout(memorialId);
+            }
+          } catch {}
+        }
       }
     });
 
@@ -557,6 +568,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             localStorage.setItem("memora_partner_user", userParam);
           }
           setIsYndiPartner(true);
+
+          // Si el usuario llega desde YndiPet, sincronizamos automáticamente:
+          // Si no tiene sesión activa, abrimos el modal de registro con su correo precargado.
+          // Si ya tiene sesión activa, notificamos que el beneficio $0 CLP está activo y lo llevamos al wizard.
+          setTimeout(() => {
+            supabase.auth.getSession().then(({ data: { session } }) => {
+              if (!session?.user) {
+                setAuthModalMode("register");
+                setIsAuthModalOpen(true);
+              } else {
+                notify(
+                  "success",
+                  "¡Convenio YndiPet Premium Activo!",
+                  "Tu cuenta tiene 1 año bonificado ($0 CLP). Ya puedes crear el memorial de tu compañero."
+                );
+                activateYndiPetBenefit("familia");
+                setCurrentView("wizard");
+              }
+            });
+          }, 350);
         } catch {}
       }
 
@@ -819,7 +850,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setCurrentUser(user);
     setIsAuthModalOpen(false);
-    notify("success", "Bienvenido a MEMORA", `Sesión iniciada como ${user.name}`);
+    if (isYndiPartner) {
+      notify(
+        "success",
+        "¡Convenio YndiPet Premium Activo!",
+        `Bienvenido ${user.name}. Tu cuenta tiene 1 año bonificado ($0 CLP) para crear tu memorial.`
+      );
+      activateYndiPetBenefit("familia");
+      setCurrentView("wizard");
+    } else {
+      notify("success", "Bienvenido a MEMORA", `Sesión iniciada como ${user.name}`);
+    }
     return { success: true };
   };
 
@@ -879,12 +920,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setCurrentUser(user);
     setIsAuthModalOpen(false);
-    notify(
-      "success",
-      "¡Cuenta creada con éxito!",
-      "Elige el plan que mejor se ajuste a tu familia para activar tu MEMORA."
-    );
-    goToPlanSelection();
+    if (isYndiPartner) {
+      notify(
+        "success",
+        "¡Convenio YndiPet Premium Activado!",
+        "Tu cuenta cuenta con 1 año bonificado ($0 CLP) bajo el plan Familia para honrar a tu compañero."
+      );
+      activateYndiPetBenefit("familia");
+      setCurrentView("wizard");
+    } else {
+      notify(
+        "success",
+        "¡Cuenta creada con éxito!",
+        "Elige el plan que mejor se ajuste a tu familia para activar tu MEMORA."
+      );
+      goToPlanSelection();
+    }
     return { success: true };
   };
 
