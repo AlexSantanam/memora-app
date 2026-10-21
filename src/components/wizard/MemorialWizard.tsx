@@ -31,6 +31,7 @@ import {
 export const MemorialWizard: React.FC = () => {
   const {
     createMemorial,
+    addMediaItem,
     setCurrentView,
     openMemorialBySlug,
     generateStoryWithAI,
@@ -42,13 +43,31 @@ export const MemorialWizard: React.FC = () => {
     isYndiPartner,
   } = useApp();
 
+  // Datos de mascota importada desde YndiPet (si aplica)
+  const [importedPet] = useState<any>(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = localStorage.getItem("memora_imported_pet");
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  });
+
   // Step 0: Type Selection ("¿A quién quieres recordar?")
   // Step 1: Basic Info
   // Step 2: Photos & Quote
   // Step 3: Story & AI
   // Step 4: Privacy & Plan
   // Step 5: Confirm & Publish
-  const [currentStep, setCurrentStep] = useState<number>(0);
+  const [currentStep, setCurrentStep] = useState<number>(() => {
+    try {
+      if (typeof window !== "undefined" && localStorage.getItem("memora_imported_pet")) {
+        return 1; // Salta directo al paso 1 si ya trajimos una mascota desde YndiPet
+      }
+    } catch {}
+    return 0;
+  });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
 
@@ -66,8 +85,10 @@ export const MemorialWizard: React.FC = () => {
 
   // Memorial Type Choice — Default to "pet" if coming from YndiPet
   const [memorialType, setMemorialType] = useState<MemorialType>(() => {
-    if (typeof window !== "undefined" && localStorage.getItem("memora_partner") === "yndipet") {
-      return "pet";
+    if (typeof window !== "undefined") {
+      if (localStorage.getItem("memora_imported_pet") || localStorage.getItem("memora_partner") === "yndipet") {
+        return "pet";
+      }
     }
     return "person";
   });
@@ -101,34 +122,49 @@ export const MemorialWizard: React.FC = () => {
     aiPassions: string;
     aiFamily: string;
     aiTone: string;
-  }>({
-    personName: "",
-    preferredName: "",
-    birthDate: "",
-    passingDate: "",
-    birthPlace: "",
-    restingPlace: "",
-    mainPhoto: "",
-    coverPhoto: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1600&q=80",
-    quote: `"Su luz y su recuerdo permanecen siempre entre nosotros."`,
-    summary: "",
-    biography: "",
-    privacy: "public",
-    password: "",
-    // Pet defaults
-    species: "perro",
-    breed: "",
-    personality: "",
-    favoriteThings: "",
-    favoritePlace: "",
-    anecdote: "",
-    arrivalStory: "",
-    specialTrait: "",
-    // AI inputs
-    aiNotes: "",
-    aiPassions: "",
-    aiFamily: "",
-    aiTone: "emotivo y celebratorio de su vida",
+  }>(() => {
+    let petData: any = null;
+    try {
+      if (typeof window !== "undefined") {
+        const raw = localStorage.getItem("memora_imported_pet");
+        if (raw) petData = JSON.parse(raw);
+      }
+    } catch {}
+
+    const isPetImport = !!petData;
+    return {
+      personName: petData?.personName || "",
+      preferredName: petData?.preferredName || "",
+      birthDate: petData?.birthDate || "",
+      passingDate: "",
+      birthPlace: "",
+      restingPlace: "",
+      mainPhoto: petData?.mainPhoto || "",
+      coverPhoto: petData?.coverPhoto || "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1600&q=80",
+      quote: isPetImport
+        ? `"Nos diste años de alegría incondicional y el amor más puro que conocimos."`
+        : `"Su luz y su recuerdo permanecen siempre entre nosotros."`,
+      summary: isPetImport && petData.personName
+        ? `En memoria entrañable de ${petData.personName}, nuestro amado compañero.`
+        : "",
+      biography: petData?.biography || "",
+      privacy: "public",
+      password: "",
+      // Pet defaults
+      species: petData?.species || "perro",
+      breed: petData?.breed || "",
+      personality: petData?.personality || "",
+      favoriteThings: "",
+      favoritePlace: "",
+      anecdote: "",
+      arrivalStory: "",
+      specialTrait: "",
+      // AI inputs
+      aiNotes: petData?.personality ? `Personalidad: ${petData.personality}` : "",
+      aiPassions: "",
+      aiFamily: "",
+      aiTone: "emotivo y celebratorio de su vida",
+    };
   });
 
   const [aiGeneratedSuccess, setAiGeneratedSuccess] = useState(false);
@@ -266,6 +302,28 @@ export const MemorialWizard: React.FC = () => {
         arrivalStory: memorialType === "pet" ? formData.arrivalStory : undefined,
         specialTrait: memorialType === "pet" ? formData.specialTrait : undefined,
       });
+
+      // Si llegaron fotos y recuerdos desde YndiPet, vincularlos a la galería multimedia del memorial
+      if (importedPet?.photos && Array.isArray(importedPet.photos) && importedPet.photos.length > 0) {
+        for (const pUrl of importedPet.photos) {
+          try {
+            addMediaItem(created.id, {
+              type: "photo",
+              url: pUrl,
+              title: `Recuerdo de ${created.personName}`,
+              uploaderName: currentUser?.name || "YndiPet",
+              caption: "Recuerdo transferido desde YndiPet",
+            });
+          } catch (mErr) {
+            console.warn("No se pudo adjuntar foto transferida:", pUrl, mErr);
+          }
+        }
+      }
+
+      // Limpiar datos importados de la sesión local
+      try {
+        localStorage.removeItem("memora_imported_pet");
+      } catch {}
 
       // Navigate to created memorial
       openMemorialBySlug(created.slug);
@@ -482,6 +540,55 @@ export const MemorialWizard: React.FC = () => {
 
             {/* Form Container Card */}
             <div className="bg-white rounded-3xl p-6 sm:p-10 border border-[#EAE3D9] shadow-sm">
+
+              {importedPet && (
+                <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/80 rounded-2xl p-4 sm:p-5 flex items-center justify-between gap-4 text-stone-800 mb-8 shadow-sm">
+                  <div className="flex items-center gap-3.5 min-w-0">
+                    {importedPet.mainPhoto ? (
+                      <img
+                        src={importedPet.mainPhoto}
+                        alt={importedPet.personName}
+                        className="w-12 h-12 rounded-xl object-cover border-2 border-white shadow-sm shrink-0"
+                      />
+                    ) : (
+                      <div className="w-12 h-12 rounded-xl bg-amber-100 flex items-center justify-center text-xl shrink-0">
+                        🐾
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 uppercase tracking-wider bg-amber-100/80 px-2 py-0.5 rounded-full">
+                          <Sparkles className="w-3 h-3" /> Vinculado con YndiPet
+                        </span>
+                        {importedPet.photos?.length > 0 && (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                            📸 {importedPet.photos.length} recuerdos listos para la galería
+                          </span>
+                        )}
+                      </div>
+                      <h4 className="text-sm sm:text-base font-bold text-[#24201D] truncate mt-1">
+                        Datos y recuerdos de {importedPet.personName || "tu mascota"} transferidos
+                      </h4>
+                      <p className="text-xs text-[#5C534B]">
+                        Información precargada con tu beneficio 100% Bonificado ($0 CLP).
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      try {
+                        localStorage.removeItem("memora_imported_pet");
+                      } catch {}
+                      window.location.reload();
+                    }}
+                    className="text-xs text-[#8C827A] hover:text-[#24201D] underline shrink-0 cursor-pointer px-2 py-1"
+                    title="Descartar datos importados para ingresar manualmente"
+                  >
+                    Restablecer
+                  </button>
+                </div>
+              )}
               
               {/* STEP 1: Datos Principales */}
               {currentStep === 1 && (

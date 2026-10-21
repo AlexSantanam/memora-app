@@ -569,6 +569,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
           setIsYndiPartner(true);
 
+          // Traslado de mascota y recuerdos desde YndiPet
+          const petName = urlParams.get("pet_name");
+          const petSpecies = urlParams.get("pet_species");
+          const petBreed = urlParams.get("pet_breed");
+          const petBirth = urlParams.get("pet_birth");
+          const petPhoto = urlParams.get("pet_photo");
+          const petCover = urlParams.get("pet_cover");
+          const petBio = urlParams.get("pet_bio");
+          const petPersonality = urlParams.get("pet_personality");
+          const petPhotosStr = urlParams.get("pet_photos");
+          const petPhotos = petPhotosStr ? petPhotosStr.split("|").filter(Boolean) : [];
+
+          if (petName) {
+            const importedPet = {
+              personName: petName,
+              species: petSpecies || "perro",
+              breed: petBreed || "",
+              birthDate: petBirth || "",
+              mainPhoto: petPhoto || "",
+              coverPhoto: petCover || "",
+              biography: petBio || "",
+              personality: petPersonality || "",
+              photos: petPhotos,
+            };
+            localStorage.setItem("memora_imported_pet", JSON.stringify(importedPet));
+          }
+
           // Si el usuario llega desde YndiPet, sincronizamos automáticamente:
           // Si no tiene sesión activa, abrimos el modal de registro con su correo precargado.
           // Si ya tiene sesión activa, notificamos que el beneficio $0 CLP está activo y lo llevamos al wizard.
@@ -580,8 +607,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               } else {
                 notify(
                   "success",
-                  "¡Convenio YndiPet Premium Activo!",
-                  "Tu cuenta tiene 1 año bonificado ($0 CLP). Ya puedes crear el memorial de tu compañero."
+                  petName ? `¡Recuerdos de ${petName} importados!` : "¡Convenio YndiPet Premium Activo!",
+                  petName
+                    ? `Hemos precargado las fotos y recuerdos de ${petName} desde YndiPet a $0 CLP.`
+                    : "Tu cuenta tiene 1 año bonificado ($0 CLP). Ya puedes crear el memorial de tu compañero."
                 );
                 activateYndiPetBenefit("familia");
                 setCurrentView("wizard");
